@@ -249,7 +249,7 @@ def reference_video() -> Path:
     return ref
 
 
-def motion_from_prompt(text: str, seconds: float = 5.0
+def motion_from_prompt(text: str, seconds: float = 10.0
                        ) -> tuple[torch.Tensor, np.ndarray]:
     frames = max(30, int(seconds * 30))
     if CONFIG.genmo_space:

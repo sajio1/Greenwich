@@ -762,7 +762,7 @@ def create_app() -> FastAPI:
         mode = str(payload.get("mode") or "prompt")
         text = str(payload.get("text") or "").strip()
         video_asset = str(payload.get("video_asset") or "").strip()
-        frames = max(15, min(10_000, int(payload.get("frames") or 120)))
+        frames = max(30, int(payload.get("frames") or 300))
         if mode == "prompt" and not text:
             raise HTTPException(422, "prompt text is required")
         if mode not in ("prompt", "video"):

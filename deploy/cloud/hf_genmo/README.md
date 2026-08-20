@@ -16,9 +16,11 @@ Private ZeroGPU worker for the AlphaMotion Studio. It exposes two named Gradio
 API endpoints, `/generate_text` and `/generate_video`, and returns only a safe
 NPZ containing local SMPL-22 rotations, root translation and FPS.
 
-The free personal ZeroGPU tier is deliberately capped to three seconds / 90
-frames per inference so each call requests at most 60 GPU seconds. AlphaMotion
-can resample the returned motion to the project timeline length.
+Text generation uses the official GENMO default of 300 frames (10 seconds at
+30 FPS), while still accepting another requested length. Video generation
+preserves the uploaded clip duration instead of truncating it. ZeroGPU jobs may
+request up to 300 GPU seconds; exceptionally long inputs can still be stopped
+by Hugging Face quota or runtime limits.
 
 Required Space variable:
 

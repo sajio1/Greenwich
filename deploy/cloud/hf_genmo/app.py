@@ -26,7 +26,7 @@ GENMO_DIR = ROOT / "GENMO"
 GENMO_REVISION = "16bebf402d8893184249ee206d957b8248cd8310"
 ASSET_REPO = os.environ.get("GENMO_ASSET_REPO", "").strip()
 HF_TOKEN = os.environ.get("HF_TOKEN")
-MAX_FRAMES = 90
+DEFAULT_TEXT_FRAMES = 300
 
 
 def _prepare_source() -> None:
@@ -154,7 +154,7 @@ def _normalized_video(path: str) -> str:
     output = Path(tempfile.mkstemp(prefix="alphamotion-input-",
                                    suffix=".mp4")[1])
     subprocess.run([
-        "ffmpeg", "-y", "-i", str(source), "-t", "3", "-vf", "fps=30",
+        "ffmpeg", "-y", "-i", str(source), "-vf", "fps=30",
         "-an", "-c:v", "libx264", "-preset", "veryfast", str(output),
     ], check=True, capture_output=True)
     return str(output)
@@ -211,16 +211,16 @@ def _predict_text(prompt: str, text_frames: int) -> str:
     return _safe_artifact(prediction, segment_info, "text")
 
 
-@spaces.GPU(duration=60)
-def generate_text(prompt: str, frames: int = 90) -> str:
+@spaces.GPU(duration=300)
+def generate_text(prompt: str, frames: int = DEFAULT_TEXT_FRAMES) -> str:
     prompt = str(prompt or "").strip()
     if not prompt:
         raise gr.Error("Enter a motion prompt.")
-    frames = max(30, min(MAX_FRAMES, int(frames)))
+    frames = max(30, int(frames or DEFAULT_TEXT_FRAMES))
     return _predict_text(prompt, frames)
 
 
-@spaces.GPU(duration=60)
+@spaces.GPU(duration=300)
 def generate_video(video_path: str, _requested_frames: int = 0) -> str:
     normalized = _normalized_video(video_path)
     return _predict([normalized], 60, None)
@@ -232,8 +232,9 @@ with gr.Blocks(title="AlphaMotion GENMO") as demo:
         "Use the main AlphaMotion Studio for the complete workflow.")
     with gr.Tab("Text → SMPL"):
         text = gr.Textbox(label="Motion prompt")
-        frames = gr.Slider(30, MAX_FRAMES, value=90, step=1,
-                           label="Frames at 30 FPS")
+        frames = gr.Number(value=DEFAULT_TEXT_FRAMES, minimum=30, step=1,
+                           precision=0,
+                           label="Frames at 30 FPS (GENMO default: 300)")
         text_output = gr.File(label="AlphaMotion NPZ")
         gr.Button("Generate").click(
             generate_text, [text, frames], text_output,
