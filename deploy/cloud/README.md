@@ -9,9 +9,11 @@ Browser --HTTPS--> AWS Studio (AlphaMotion + BodyDataStudio + 150 GB EBS)
                          +--server-side HF token--> private GENMO ZeroGPU Space
 ```
 
-The browser sees neither the Hugging Face token nor AWS credentials. Set one
-shared `ALPHAMOTION_ACCESS_TOKEN`; AlphaMotion binds it to at most three
-browser-generated P-256 device keys. Device registrations persist on EBS.
+The browser sees neither the Hugging Face token nor AWS credentials. Set
+`ALPHAMOTION_ACCESS_TOKENS` to a comma-separated list of independent demo
+tokens (or use the legacy single `ALPHAMOTION_ACCESS_TOKEN`). AlphaMotion binds
+each token to at most three browser-generated P-256 device keys. Device
+registrations persist on EBS.
 
 - `aws/`: reproducible Studio image, TLS proxy, persistent-volume layout and
   Ubuntu bootstrap.

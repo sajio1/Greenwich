@@ -111,6 +111,7 @@ async def _device_payload(client: _ASGIClient, token: str, name: str):
 
 def _app(monkeypatch, tmp_path):
     monkeypatch.setenv("ALPHAMOTION_ACCESS_TOKEN", "shared-demo-token")
+    monkeypatch.delenv("ALPHAMOTION_ACCESS_TOKENS", raising=False)
     monkeypatch.setenv("ALPHAMOTION_ACCESS_MAX_DEVICES", "3")
     monkeypatch.setenv("ALPHAMOTION_ACCESS_REGISTRY",
                        str(tmp_path / "access.json"))
@@ -127,6 +128,41 @@ def _app(monkeypatch, tmp_path):
         return {"studio": True}
 
     return app
+
+
+def _multi_token_app(monkeypatch, tmp_path):
+    monkeypatch.delenv("ALPHAMOTION_ACCESS_TOKEN", raising=False)
+    monkeypatch.setenv("ALPHAMOTION_ACCESS_TOKENS", "demo-one,demo-two")
+    monkeypatch.setenv("ALPHAMOTION_ACCESS_MAX_DEVICES", "1")
+    monkeypatch.setenv("ALPHAMOTION_ACCESS_REGISTRY",
+                       str(tmp_path / "multi-access.json"))
+    monkeypatch.setenv("ALPHAMOTION_COOKIE_SECURE", "0")
+    app = FastAPI()
+    app.add_middleware(DemoAccessMiddleware)
+
+    @app.get("/")
+    async def home():
+        return {"studio": True}
+
+    return app
+
+
+@pytest.mark.anyio
+async def test_multiple_tokens_have_independent_device_slots(monkeypatch, tmp_path):
+    client_one = _ASGIClient(_multi_token_app(monkeypatch, tmp_path))
+    first = await _device_payload(client_one, "demo-one", "First laptop")
+    assert (await client_one.post("/api/access/register", json=first)).status_code == 200
+
+    second_for_one = await _device_payload(client_one, "demo-one", "Second laptop")
+    assert (await client_one.post(
+        "/api/access/register", json=second_for_one)).status_code == 409
+
+    client_two = _ASGIClient(_multi_token_app(monkeypatch, tmp_path))
+    first_for_two = await _device_payload(client_two, "demo-two", "Other laptop")
+    assert (await client_two.post(
+        "/api/access/register", json=first_for_two)).status_code == 200
+    listed = await client_two.post("/api/access/devices", json={"token": "demo-two"})
+    assert [item["name"] for item in listed.json()["devices"]] == ["Other laptop"]
 
 
 @pytest.mark.anyio

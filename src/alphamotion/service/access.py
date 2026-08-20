@@ -1,4 +1,4 @@
-"""Small-demo access gate with a shared token and three device slots.
+"""Small-demo access gate with one or more tokens and device slots.
 
 The browser never receives the Hugging Face service token. It exchanges the
 operator-provided demo token plus a non-exportable WebCrypto device signature
@@ -56,8 +56,15 @@ def _fingerprint(jwk: object) -> str:
 
 class DemoAccessStore:
     def __init__(self) -> None:
-        self.shared_token = os.environ.get("ALPHAMOTION_ACCESS_TOKEN", "")
-        self.enabled = bool(self.shared_token)
+        raw_tokens = os.environ.get("ALPHAMOTION_ACCESS_TOKENS", "")
+        tokens = [item.strip() for item in raw_tokens.replace("\n", ",").split(",")
+                  if item.strip()]
+        legacy_token = os.environ.get("ALPHAMOTION_ACCESS_TOKEN", "").strip()
+        if legacy_token and legacy_token not in tokens:
+            tokens.insert(0, legacy_token)
+        self.tokens = tuple(tokens)
+        self.shared_token = self.tokens[0] if self.tokens else ""
+        self.enabled = bool(self.tokens)
         self.max_devices = max(1, int(os.environ.get(
             "ALPHAMOTION_ACCESS_MAX_DEVICES", "3")))
         self.session_days = max(1, int(os.environ.get(
@@ -68,7 +75,8 @@ class DemoAccessStore:
             "ALPHAMOTION_ACCESS_REGISTRY", "") or
             data_dir() / "demo_access.json")
         self._key = hashlib.sha256(
-            b"alphamotion-demo-session\0" + self.shared_token.encode()).digest()
+            b"alphamotion-demo-session\0" + b"\0".join(
+                token.encode() for token in self.tokens)).digest()
         self._lock = threading.RLock()
         self._challenges: dict[str, dict] = {}
 
@@ -90,9 +98,13 @@ class DemoAccessStore:
                        encoding="utf-8")
         tmp.replace(self.path)
 
-    def _token_ok(self, value: object) -> bool:
-        return isinstance(value, str) and hmac.compare_digest(
-            value.encode(), self.shared_token.encode())
+    def _token_id(self, value: object) -> str | None:
+        if not isinstance(value, str):
+            return None
+        for token in self.tokens:
+            if hmac.compare_digest(value.encode(), token.encode()):
+                return hashlib.sha256(token.encode()).hexdigest()[:16]
+        return None
 
     def challenge(self, jwk: object) -> dict:
         fingerprint = _fingerprint(jwk)
@@ -134,7 +146,8 @@ class DemoAccessStore:
         return fingerprint
 
     def register(self, body: dict) -> tuple[str, dict]:
-        if not self._token_ok(body.get("token")):
+        token_id = self._token_id(body.get("token"))
+        if token_id is None:
             raise PermissionError("access token is invalid")
         jwk = body.get("public_key")
         fingerprint = self._verify_signature(
@@ -145,23 +158,26 @@ class DemoAccessStore:
         with self._lock:
             registry = self._read()
             devices = registry["devices"]
-            existing = devices.get(fingerprint)
+            device_key = f"{token_id}:{fingerprint}"
+            existing = devices.get(device_key)
             active = [item for item in devices.values()
-                      if not item.get("revoked")]
+                      if item.get("token_id") == token_id and
+                      not item.get("revoked")]
             if existing is None and len(active) >= self.max_devices:
                 raise OverflowError(
                     f"this token already has {self.max_devices} registered devices")
-            devices[fingerprint] = {
+            devices[device_key] = {
                 "id": fingerprint[:12], "name": name,
+                "token_id": token_id,
                 "created_at": (existing or {}).get("created_at", now),
                 "last_seen_at": now, "revoked": False,
             }
             self._write(registry)
-        return self.make_session(fingerprint), devices[fingerprint]
+        return self.make_session(token_id, fingerprint), devices[device_key]
 
-    def make_session(self, fingerprint: str) -> str:
+    def make_session(self, token_id: str, fingerprint: str) -> str:
         payload = _b64e(json.dumps({
-            "device": fingerprint,
+            "device": fingerprint, "token_id": token_id,
             "expires": int(time.time()) + self.session_days * 86400,
         }, separators=(",", ":")).encode())
         signature = _b64e(hmac.new(
@@ -181,29 +197,35 @@ class DemoAccessStore:
             if int(decoded["expires"]) < int(time.time()):
                 return False
             fingerprint = decoded["device"]
+            token_id = decoded["token_id"]
             with self._lock:
-                device = self._read()["devices"].get(fingerprint)
+                device = self._read()["devices"].get(
+                    f"{token_id}:{fingerprint}")
             return bool(device and not device.get("revoked"))
         except (ValueError, TypeError, KeyError, json.JSONDecodeError):
             return False
 
     def devices(self, token: object) -> list[dict]:
-        if not self._token_ok(token):
+        token_id = self._token_id(token)
+        if token_id is None:
             raise PermissionError("access token is invalid")
         with self._lock:
-            values = list(self._read()["devices"].values())
+            values = [item for item in self._read()["devices"].values()
+                      if item.get("token_id") == token_id]
         return sorted(values, key=lambda item: (
             int(item.get("created_at", 0)), str(item.get("name", "")),
             str(item.get("id", ""))))
 
     def revoke(self, token: object, device_id: object) -> None:
-        if not self._token_ok(token):
+        token_id = self._token_id(token)
+        if token_id is None:
             raise PermissionError("access token is invalid")
         wanted = str(device_id or "")
         with self._lock:
             registry = self._read()
             matched = [key for key, item in registry["devices"].items()
-                       if item.get("id") == wanted]
+                       if item.get("token_id") == token_id and
+                       item.get("id") == wanted]
             if not matched:
                 raise KeyError("device not found")
             del registry["devices"][matched[0]]
