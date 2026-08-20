@@ -9,3 +9,6 @@ dist/
 *.npz.tmp
 weights_staging/
 work/imported_smpl/
+deploy/cloud/aws/.bundle/
+deploy/cloud/aws/.env
+deploy/cloud/hf_genmo/.bundle/

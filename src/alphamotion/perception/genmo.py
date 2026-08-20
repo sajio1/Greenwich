@@ -8,10 +8,9 @@ functions raise with actionable instructions instead of pretending.
 """
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
-import time
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -27,6 +26,12 @@ SMPL_PARENTS = [-1, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 9, 9, 12, 13, 14,
 
 def status() -> dict:
     """Cheap readiness probe used by health/UI; never imports GENMO itself."""
+    if CONFIG.genmo_space:
+        missing = [] if CONFIG.genmo_token else ["space_token"]
+        ready = bool(CONFIG.genmo_token)
+        return {"ready": ready, "text": ready, "video": ready,
+                "backend": "GENMO ZeroGPU", "space": CONFIG.genmo_space,
+                "missing": missing}
     python = Path(CONFIG.genmo_python) if CONFIG.genmo_python else None
     repo = Path(CONFIG.genmo_repo) if CONFIG.genmo_repo else None
     script = repo / "scripts" / "demo" / "demo_smpl.py" if repo else None
@@ -132,6 +137,87 @@ def global_to_local_rot6d(global_rot6d: torch.Tensor) -> torch.Tensor:
     return matrix_to_rot6d(local_R).float()
 
 
+def local_to_global_rot6d(local_rot6d: torch.Tensor) -> torch.Tensor:
+    """Compose portable local SMPL rotations for the timeline FK contract."""
+    local_R = rot6d_to_matrix(local_rot6d)
+    global_R = local_R.clone()
+    for joint, parent in enumerate(SMPL_PARENTS):
+        if parent >= 0:
+            global_R[:, joint] = global_R[:, parent] @ local_R[:, joint]
+    return matrix_to_rot6d(global_R).float()
+
+
+@lru_cache(maxsize=2)
+def _space_client(space: str, token: str):
+    try:
+        from gradio_client import Client
+    except ImportError as exc:
+        raise RuntimeError(
+            "remote GENMO requires the perception extra: "
+            "pip install 'alphamotion[perception]'") from exc
+    return Client(space, token=token)
+
+
+def _space_result_path(result) -> Path:
+    if isinstance(result, (list, tuple)):
+        if not result:
+            raise RuntimeError("GENMO Space returned an empty result")
+        result = result[0]
+    if isinstance(result, dict):
+        result = result.get("path") or result.get("name")
+    path = Path(str(result or ""))
+    if not path.is_file():
+        raise RuntimeError(f"GENMO Space result is missing: {path}")
+    return path
+
+
+def _load_space_motion(result) -> tuple[torch.Tensor, np.ndarray, float]:
+    path = _space_result_path(result)
+    try:
+        with np.load(path, allow_pickle=False) as payload:
+            local = np.asarray(payload["local_rot6d"], np.float32)
+            root = np.asarray(payload["root_cm"], np.float64)
+            fps = float(np.asarray(payload.get("fps", 30.0)).reshape(()))
+    except (OSError, ValueError, KeyError) as exc:
+        raise RuntimeError(f"invalid GENMO Space artifact: {exc}") from exc
+    if local.ndim != 3 or local.shape[1:] != (22, 6) or len(local) == 0:
+        raise RuntimeError("GENMO Space local_rot6d must have shape [T,22,6]")
+    if root.shape != (len(local), 3):
+        raise RuntimeError("GENMO Space root_cm must have shape [T,3]")
+    if not np.isfinite(local).all() or not np.isfinite(root).all():
+        raise RuntimeError("GENMO Space artifact contains NaN or infinity")
+    if fps <= 0 or not np.isfinite(fps):
+        raise RuntimeError("GENMO Space fps must be positive")
+    root = root - root[:1]
+    return local_to_global_rot6d(torch.from_numpy(local)), root, fps
+
+
+def _space_prompt(text: str, frames: int) -> tuple[torch.Tensor, np.ndarray]:
+    client = _space_client(CONFIG.genmo_space, CONFIG.genmo_token)
+    job = client.submit(text, int(frames), api_name="/generate_text")
+    rotations, root, _fps = _load_space_motion(
+        job.result(timeout=CONFIG.genmo_timeout_s))
+    return _resample(rotations, root, frames)
+
+
+def _space_video(video_path: str,
+                 frames: int | None) -> tuple[torch.Tensor, np.ndarray]:
+    try:
+        from gradio_client import handle_file
+    except ImportError as exc:
+        raise RuntimeError(
+            "remote GENMO requires the perception extra: "
+            "pip install 'alphamotion[perception]'") from exc
+    client = _space_client(CONFIG.genmo_space, CONFIG.genmo_token)
+    requested = int(frames) if frames is not None else 0
+    job = client.submit(handle_file(video_path), requested,
+                        api_name="/generate_video")
+    rotations, root, _fps = _load_space_motion(
+        job.result(timeout=CONFIG.genmo_timeout_s))
+    return (_resample(rotations, root, frames)
+            if frames is not None else (rotations, root))
+
+
 def _run_genmo(inputs: list[str], text_len: int,
                *, needs_reference: bool = False) -> dict:
     _require_env(needs_reference=needs_reference)
@@ -141,7 +227,7 @@ def _run_genmo(inputs: list[str], text_len: int,
            "--input_list", *inputs, "--no_render", "--static_cam",
            "--text_length", str(text_len), "--output_root", str(staging)]
     proc = subprocess.run(cmd, cwd=CONFIG.genmo_repo, text=True,
-                          capture_output=True, timeout=1900)
+                          capture_output=True, timeout=1900, check=False)
     if proc.returncode != 0:
         raise RuntimeError("GENMO failed: "
                            + (proc.stderr[-1500:] or proc.stdout[-1500:]))
@@ -166,6 +252,8 @@ def reference_video() -> Path:
 def motion_from_prompt(text: str, seconds: float = 5.0
                        ) -> tuple[torch.Tensor, np.ndarray]:
     frames = max(30, int(seconds * 30))
+    if CONFIG.genmo_space:
+        return _space_prompt(text, frames)
     art = _run_genmo([str(reference_video()), f"text:{text}"], frames,
                      needs_reference=True)
     return (smpl_to_global_rot6d(art, segment="text"),
@@ -195,6 +283,8 @@ def motion_from_video(video_path: str, frames: int | None = None
     src = Path(video_path)
     if not src.is_file():
         raise RuntimeError(f"video not found: {src}")
+    if CONFIG.genmo_space:
+        return _space_video(str(src), frames)
     staged = cache_dir() / "genmo_staging" / "uploads" / src.name
     staged.parent.mkdir(parents=True, exist_ok=True)
     if not staged.exists():

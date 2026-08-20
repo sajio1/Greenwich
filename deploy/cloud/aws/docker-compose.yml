@@ -1,0 +1,51 @@
+services:
+  studio:
+    build:
+      context: ./.bundle
+      dockerfile: Dockerfile
+    image: alphamotion-studio:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ALPHAMOTION_HOST: 0.0.0.0
+      ALPHAMOTION_PORT: 7860
+      ALPHAMOTION_DATA: /srv/alphamotion/data
+      ALPHAMOTION_CACHE: /srv/alphamotion/cache
+      ALPHAMOTION_IMPORTED_LIBRARY: /srv/alphamotion/data/imported_smpl
+      ALPHAMOTION_DATA_STUDIO_REPO: /opt/body-data-studio
+      ALPHAMOTION_DATA_STUDIO_ROOT: /srv/alphamotion/body_data
+      ALPHAMOTION_DATA_STUDIO_CACHE: /srv/alphamotion/data_studio
+      ALPHAMOTION_DATA_STUDIO_PORT: 8765
+      ALPHAMOTION_INCLUDE_CURATED: 0
+      MUJOCO_GL: egl
+      PYOPENGL_PLATFORM: egl
+    volumes:
+      - /srv/alphamotion/data:/srv/alphamotion/data
+      - /srv/alphamotion/cache:/srv/alphamotion/cache
+      - /srv/alphamotion/data_studio:/srv/alphamotion/data_studio
+      - /srv/alphamotion/body_data:/srv/alphamotion/body_data:ro
+    expose:
+      - "7860"
+    networks: [web]
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    depends_on: [studio]
+    environment:
+      STUDIO_DOMAIN: ${STUDIO_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [web]
+
+networks:
+  web:
+
+volumes:
+  caddy_data:
+  caddy_config:

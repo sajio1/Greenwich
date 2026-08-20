@@ -33,6 +33,7 @@ from ..paths import data_dir, results_dir
 from ..projects import ProjectStore
 from .db import Asset, AtlasEdge, Job, Motion, Skeleton, session
 from .quality import release_passed
+from .access import DemoAccessMiddleware
 
 # The warm pool and embodiment registry may import MuJoCo long before an MP4
 # is requested. Select the platform backend before either module can do so;
@@ -77,6 +78,9 @@ def _library_preview_key(lib, library_id: int) -> str:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="AlphaMotion", version="0.1.0")
+    # Disabled unless ALPHAMOTION_ACCESS_TOKEN is set. A pure ASGI middleware
+    # covers mounted frontend files and Viser WebSockets as well as API routes.
+    app.add_middleware(DemoAccessMiddleware)
     state: dict = {"library": None, "warm": None,
                    "library_previews": OrderedDict(),
                    "timeline_previews": OrderedDict(),

@@ -1,0 +1,115 @@
+diff --git a/configs/exp/gem_smpl.yaml b/configs/exp/gem_smpl.yaml
+index 0633663..aada68e 100644
+--- a/configs/exp/gem_smpl.yaml
++++ b/configs/exp/gem_smpl.yaml
+@@ -52,7 +52,7 @@ model:
+ 
+     text_encoder:
+       load_llm: false
+-      llm_version: "t5-3b"
++      llm_version: "google-t5/t5-3b"
+       max_text_len: 50
+ 
+     condition_mask:
+diff --git a/configs/model/gem.yaml b/configs/model/gem.yaml
+index e7de3f4..fd85dec 100644
+--- a/configs/model/gem.yaml
++++ b/configs/model/gem.yaml
+@@ -21,7 +21,7 @@ model_cfg:
+ 
+   text_encoder:
+     load_llm: false
+-    llm_version: "t5-3b"
++    llm_version: "google-t5/t5-3b"
+     max_text_len: 50
+ 
+   condition_mask:
+diff --git a/configs/text_encoder/t5_3b.yaml b/configs/text_encoder/t5_3b.yaml
+index 07f1b82..859e7bf 100644
+--- a/configs/text_encoder/t5_3b.yaml
++++ b/configs/text_encoder/t5_3b.yaml
+@@ -1,3 +1,3 @@
+ load_llm: true
+-llm_version: "t5-3b"
+-max_text_len: 50
+\ No newline at end of file
++llm_version: "google-t5/t5-3b"
++max_text_len: 50
+diff --git a/gem/gem.py b/gem/gem.py
+index e7de3f4..2f756e6 100644
+--- a/gem/gem.py
++++ b/gem/gem.py
+@@ -1136,11 +1136,14 @@ class GEM(pl.LightningModule):
+         if "text_embed" in batch:
+             batch["encoded_text"] = batch["text_embed"].cuda()
+         else:
+-            if "caption" in data:
+-                batch["caption"] = [data["caption"]]
+-            else:
+-                batch["caption"] = [""]
+-            batch["has_text"] = torch.tensor([True])
++            raw_caption = data.get("caption", "")
++            # Tokenizers 0.22 / Transformers 5 reject a completely empty
++            # batch before `has_text=False` can mask it.  Use a harmless
++            # placeholder for tokenization while preserving the real mask.
++            batch["caption"] = [raw_caption or "a person"]
++            batch["has_text"] = data.get(
++                "has_text", torch.tensor([bool(raw_caption)])
++            ).bool().cuda()
+             batch["encoded_text"] = self.encode_text(batch["caption"], batch["has_text"])
+ 
+         batch["f_cliffcam"] = compute_bbox_info_bedlam(batch["bbx_xys"], batch["K_fullimg"]).cuda()
+@@ -1167,10 +1170,11 @@ class GEM(pl.LightningModule):
+             if "text_embed" not in batch["meta"][0]["multi_text_data"]:
+                 multi_text_data = batch["meta"][0]["multi_text_data"]
+                 num_text = len(multi_text_data["caption"])
+-                text_embed = self.encode_text(
+-                    multi_text_data["caption"], torch.tensor([True] * num_text)
+-                )
+-                batch["meta"][0]["multi_text_data"]["text_embed"] = text_embed
++                if num_text:
++                    text_embed = self.encode_text(
++                        multi_text_data["caption"], torch.tensor([True] * num_text)
++                    )
++                    batch["meta"][0]["multi_text_data"]["text_embed"] = text_embed
+ 
+         batch = self.create_condition_mask(batch, cond_mask_cfg=None, mode=None, train=False)
+ 
+diff --git a/scripts/demo/demo_smpl.py b/scripts/demo/demo_smpl.py
+index bbb49cd..2341ad3 100644
+--- a/scripts/demo/demo_smpl.py
++++ b/scripts/demo/demo_smpl.py
+@@ -292,6 +292,10 @@ def assemble_mixed_data(
+     multi_text_data["window_start"] = torch.tensor(multi_text_data["window_start"])
+     multi_text_data["window_end"] = torch.tensor(multi_text_data["window_end"])
+ 
++    meta = {"mode": "default"}
++    if text_segments:
++        meta["multi_text_data"] = multi_text_data
++
+     data = {
+         "kp2d": kp2d,
+         "bbx_xys": bbx_xys,
+@@ -300,7 +304,7 @@ def assemble_mixed_data(
+         "cam_tvel": cam_tvel,
+         "R_w2c": R_w2c,
+         "f_imgseq": f_imgseq,
+-        "has_text": torch.tensor([True]),
++        "has_text": torch.tensor([bool(text_segments)]),
+         "caption": first_text_caption,
+         "mask": {
+             "has_img_mask": has_img_mask,
+@@ -310,12 +314,7 @@ def assemble_mixed_data(
+             "has_music_mask": get_valid_mask(tot_length, 0),
+         },
+         "length": torch.tensor(tot_length),
+-        "meta": [
+-            {
+-                "mode": "default",
+-                "multi_text_data": multi_text_data,
+-            }
+-        ],
++        "meta": [meta],
+     }
+ 
+     return data, segment_info

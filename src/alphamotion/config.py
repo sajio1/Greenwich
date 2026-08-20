@@ -44,6 +44,13 @@ class AMConfig:
     # environment so its large weights never share AlphaMotion's warm process.
     genmo_python: str = os.environ.get("ALPHAMOTION_GENMO_PYTHON", "")
     genmo_repo: str = os.environ.get("ALPHAMOTION_GENMO_REPO", "")
+    # Cloud deployments use a private Gradio/ZeroGPU Space instead of a
+    # workstation-local subprocess. The token is a server-side secret and is
+    # never exposed to the browser.
+    genmo_space: str = os.environ.get("ALPHAMOTION_GENMO_SPACE", "")
+    genmo_token: str = os.environ.get("ALPHAMOTION_GENMO_TOKEN", "")
+    genmo_timeout_s: int = int(os.environ.get(
+        "ALPHAMOTION_GENMO_TIMEOUT_S", "900"))
     # Kept for compatibility with deployments created while the experimental
     # MoMask/GVHMR adapter was available; neither field is used at runtime.
     motion_python: str = os.environ.get(
