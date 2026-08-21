@@ -45,6 +45,21 @@ def test_remove_robot_and_reject_ambiguous_request(tmp_path):
         store.remove_media(project["id"], kind="motion")
 
 
+def test_delete_removes_project_document_and_private_media(tmp_path):
+    store = ProjectStore(tmp_path)
+    project = store.create("disposable")
+    media = store.media_dir(project["id"], "motions") / "take.npz"
+    media.write_bytes(b"motion")
+
+    deleted = store.delete(project["id"])
+
+    assert deleted["id"] == project["id"]
+    assert not (tmp_path / f'{project["id"]}.alphamotion-project.json').exists()
+    assert not (tmp_path / project["id"]).exists()
+    with pytest.raises(KeyError):
+        store.get(project["id"])
+
+
 def test_legacy_generation_branding_is_normalized_on_read(tmp_path):
     store = ProjectStore(tmp_path)
     project = store.create("editor")

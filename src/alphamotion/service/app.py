@@ -470,6 +470,14 @@ def create_app() -> FastAPI:
         except KeyError as exc:
             raise HTTPException(404, "project not found") from exc
 
+    @app.delete("/api/projects/{project_id}")
+    def delete_project(project_id: str):
+        try:
+            deleted = state["projects"].delete(project_id)
+        except KeyError as exc:
+            raise HTTPException(404, "project not found") from exc
+        return {"ok": True, "deleted": deleted}
+
     @app.put("/api/projects/{project_id}")
     def save_project(project_id: str, payload: dict):
         try:

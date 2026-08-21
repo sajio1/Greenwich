@@ -12,6 +12,7 @@ import datetime as dt
 import json
 import os
 import re
+import shutil
 import threading
 import uuid
 from pathlib import Path
@@ -153,6 +154,21 @@ class ProjectStore:
     def get(self, project_id: str) -> dict[str, Any]:
         with self._lock:
             return copy.deepcopy(self._read(self._path(project_id)))
+
+    def delete(self, project_id: str) -> dict[str, Any]:
+        """Permanently remove a project document and its private media.
+
+        Shared-library entries and robot definitions are deliberately left
+        intact: a project only owns its references and private upload files.
+        """
+        with self._lock:
+            project = self._read(self._path(project_id))
+            path = self._path(project_id)
+            media_root = self.root / project_id
+            path.unlink()
+            if media_root.exists():
+                shutil.rmtree(media_root)
+            return self._summary(project)
 
     def save(self, project_id: str, changes: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
