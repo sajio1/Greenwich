@@ -170,6 +170,18 @@ def test_processed_results_add_a_new_labeled_card_and_open_project_workspace():
     assert "classList.remove('show')" not in handler
 
 
+def test_bridge_generation_skips_mp4_and_reports_elapsed_time():
+    frontend = (
+        Path(__file__).parents[2]
+        / "src/alphamotion/assets/frontend/index.html"
+    ).read_text()
+
+    assert "compileTimeline({bridgeOnly:true})" in frontend
+    assert "render:bridgeOnly?false:$('#renderMp4').checked" in frontend
+    assert "Generating playable Bridge" in frontend
+    assert "j.elapsed_seconds" in frontend
+
+
 def test_project_media_delete_actions_are_exposed_in_both_studios():
     frontend = (
         Path(__file__).parents[2]
