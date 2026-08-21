@@ -189,25 +189,14 @@ def _predict(inputs: list[str], text_frames: int,
 
 
 def _predict_text(prompt: str, text_frames: int) -> str:
-    # Upstream's mixed demo requires one video solely to establish resolution
-    # and intrinsics. A one-frame, fully masked reference avoids uploading a
-    # copyrighted or personal person video and yields the intended text-only
-    # conditioning path.
+    # Text generation only needs plausible camera intrinsics.  Do not prepend
+    # a dummy video frame: compute_cam_angvel emits no sample for a one-frame
+    # clip, which leaves camera features one frame shorter than every mask.
     width = height = 720
-    rotation, angular, velocity, intrinsics = get_camera_static(
-        1, width, height)
-    reference = {
-        "type": "video", "length": 1, "width": width, "height": height,
-        "bbx_xys": torch.zeros(1, 3), "kp2d": torch.zeros(1, 17, 3),
-        "f_imgseq": torch.zeros(1, 1024),
-        "has_img_mask": torch.zeros(1, dtype=torch.bool),
-        "R_w2c": rotation, "cam_angvel": angular, "cam_tvel": velocity,
-        "K_fullimg": intrinsics,
-    }
+    _rotation, _angular, _velocity, intrinsics = get_camera_static(
+        2, width, height)
     text = create_text_segment(prompt, text_frames, intrinsics[0])
-    data, segment_info = assemble_mixed_data([reference, text], True)
-    data["mask"]["has_2d_mask"][0] = False
-    data["mask"]["has_cam_mask"][0] = False
+    data, segment_info = assemble_mixed_data([text], True)
     prediction = run_inference(MODEL, data, static_cam=True)
     return _safe_artifact(prediction, segment_info, "text")
 

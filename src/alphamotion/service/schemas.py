@@ -53,9 +53,11 @@ class Segment(APIModel):
     kind=video   : configured video->SMPL backend.  Uploaded source timing
                    metadata determines n at the timeline FPS.
     """
-    kind: Literal["library", "motion", "gap", "prompt", "video"]
+    kind: Literal["library", "motion", "project_smpl", "gap", "prompt", "video"]
     library_id: int | None = Field(default=None, ge=0)
     motion_id: int | None = Field(default=None, gt=0)
+    project_id: str | None = Field(default=None, max_length=64)
+    project_asset_id: str | None = Field(default=None, max_length=128)
     text: str | None = Field(default=None, max_length=500)
     video_asset: str | None = Field(default=None, max_length=4096)
     source_video_frames: int | None = Field(default=None, ge=1)

@@ -193,11 +193,28 @@ def _load_space_motion(result) -> tuple[torch.Tensor, np.ndarray, float]:
     return local_to_global_rot6d(torch.from_numpy(local)), root, fps
 
 
+def _space_job_result(job, operation: str):
+    try:
+        return job.result(timeout=CONFIG.genmo_timeout_s)
+    except Exception as exc:
+        detail = str(exc).strip() or repr(exc)
+        try:
+            status = getattr(job.status(), "code", None)
+            status = getattr(status, "value", status)
+        except Exception:  # status is diagnostic only
+            status = None
+        suffix = f"; queue status: {status}" if status else ""
+        raise RuntimeError(
+            f"AlphaMotion Cloud {operation} failed "
+            f"({type(exc).__name__}): {detail}{suffix}"
+        ) from exc
+
+
 def _space_prompt(text: str, frames: int) -> tuple[torch.Tensor, np.ndarray]:
     client = _space_client(CONFIG.genmo_space, CONFIG.genmo_token)
     job = client.submit(text, int(frames), api_name="/generate_text")
     rotations, root, _fps = _load_space_motion(
-        job.result(timeout=CONFIG.genmo_timeout_s))
+        _space_job_result(job, "text generation"))
     return _resample(rotations, root, frames)
 
 
@@ -214,7 +231,7 @@ def _space_video(video_path: str,
     job = client.submit(handle_file(video_path), requested,
                         api_name="/generate_video")
     rotations, root, _fps = _load_space_motion(
-        job.result(timeout=CONFIG.genmo_timeout_s))
+        _space_job_result(job, "video generation"))
     return (_resample(rotations, root, frames)
             if frames is not None else (rotations, root))
 

@@ -123,7 +123,8 @@ def create_app() -> FastAPI:
                    "editor_gizmo": {"seq": 0, "active": False},
                    "viewer_revision": 0, "data_studio_sync": None,
                    "data_studio": None, "data_studio_status": {},
-                   "projects": ProjectStore(), "smpl_generations": {}}
+                   "projects": ProjectStore(), "smpl_generations": {},
+                   "perception_cache": {}}
 
     async def _sync_data_studio_library() -> None:
         """Publish saved derived clips, then atomically reload the ID space."""
@@ -401,11 +402,37 @@ def create_app() -> FastAPI:
                     project_id)
             except KeyError as exc:
                 raise HTTPException(404, "project not found") from exc
-        return state["library"].search(
+        result = state["library"].search(
             q=q, family=family, dataset=dataset, data_role=data_role,
             augmentation=augmentation, label=label, source=source,
             offset=offset, limit=limit, allowed_indices=allowed_indices,
             allowed_asset_ids=allowed_assets)
+        # Project-native generated SMPL files are valid Motion Studio sources;
+        # they do not have a dense frozen-library index, so append them here.
+        if project_id and offset == 0:
+            project = state["projects"].get(project_id)
+            native = []
+            needle = q.casefold().strip()
+            for item in (project.get("assets") or {}).get("motions", []):
+                if not item.get("generation_id") or not item.get("local_path"):
+                    continue
+                if needle and needle not in str(item.get("name", "")).casefold():
+                    continue
+                native.append({"id": f"project:{item['asset_id']}",
+                               "project_asset_id": item["asset_id"],
+                               "project_id": project_id,
+                               "asset_id": item["asset_id"],
+                               "name": item["name"], "origin": "alphamotion",
+                               "source": "AlphaMotion", "family": "other",
+                               "dataset": "project", "data_role": "generated",
+                               "augmentation": "", "labels": [],
+                               "variant_count": 0, "frames": item.get("frames", 0),
+                               "fps": item.get("fps", 30.0),
+                               "generation_id": item["generation_id"],
+                               "preview_kind": "project-native"})
+            result["items"] = native + result["items"]
+            result["total"] += len(native)
+        return result
 
     @app.get("/api/starter-library")
     def starter_library(q: str = Query(default="", max_length=200),
@@ -836,28 +863,107 @@ def create_app() -> FastAPI:
                 target_root = data_dir() / "generated_smpl" / project_id
                 target_root.mkdir(parents=True, exist_ok=True)
                 target = target_root / f"alphamotion-{generation_id}.npz"
+                # Keep AlphaMotion's native representation and also embed the
+                # canonical SMPL-H arrays required by Body Data Studio.  This
+                # makes one file usable both in Project Motion and in the
+                # project-data workspace.
+                from scipy.spatial.transform import Rotation
+                from ..engine.nets.rotations import rot6d_to_matrix
+                matrices = rot6d_to_matrix(torch.from_numpy(local6d)).numpy()
+                basis = Rotation.from_euler("x", -90, degrees=True).as_matrix()
+                # GENMO is Y-up; Body Data Studio stores SMPL-H as Z-up.
+                # A basis *conjugation* is required for every joint (rotating
+                # only the root was the source of the distorted body pose).
+                matrices = basis.T @ matrices @ basis
+                poses = np.zeros((len(local6d), 156), np.float32)
+                poses[:, :66] = Rotation.from_matrix(
+                    matrices.reshape(-1, 3, 3)).as_rotvec().reshape(-1, 66)
+                trans = (np.asarray(root_cm, np.float32) / 100.0) @ basis
                 np.savez_compressed(target, local_rot6d=local6d.astype(np.float16),
                                     root_cm=np.asarray(root_cm, np.float32),
+                                    poses=poses, trans=trans.astype(np.float32),
+                                    mocap_frame_rate=np.asarray(30.0, np.float32),
+                                    alphamotion_smplh_export_version=np.asarray(2, np.uint8),
                                     hand_pose=np.zeros((len(local6d), 0), np.float16),
                                     betas=np.zeros(10, np.float32), gender=np.asarray(0, np.uint8),
                                     model_family=np.asarray(0, np.uint8), fps=np.asarray(30.0))
                 asset_id = hashlib.sha1(str(target).encode()).hexdigest()[:24]
                 motion = {"asset_id": asset_id, "name": f"AlphaMotion · {title}",
                           "origin": "alphamotion", "source": "AlphaMotion", "local_path": str(target),
-                          "data_studio_asset_id": asset_id,
                           "frames": len(local6d), "fps": 30.0, "state": "ready",
                           "generation_id": generation_id, "project_id": project_id,
                           "prompt": text if mode == "prompt" else "",
                           "source_video_name": video_name if mode == "video" else "",
                           "source_duration_seconds": source_duration if mode == "video" else 0.0,
-                          "imported": False, "shared": False,
+                          # This is a project-local Data Studio asset, not a shared
+                          # library record.  Its ID opens the normal Project Motion
+                          # workspace and never creates a second result card.
+                          "data_studio_asset_id": asset_id,
+                          "imported": True, "shared": False,
                           "generation_method": "text-to-smpl" if mode == "prompt" else "video-to-smpl"}
+                _register_generated_data_studio_asset(project_id, motion)
+                # Make the result immediately available under Project Motion.
+                state["projects"].add_media(
+                    project_id, motions=[motion], bin_name="AlphaMotion generated")
                 state["smpl_generations"][generation_id] = motion
                 target.with_suffix(".json").write_text(
                     json.dumps(motion, ensure_ascii=False, indent=2), encoding="utf-8")
                 return motion
             return await POOL.run(work)
         return {"job_id": _submit("generate-smpl", {"project_id": project_id, **payload}, run)}
+
+    def _register_generated_data_studio_asset(project_id: str, item: dict) -> None:
+        """Register a generated project file with Body Data Studio, not the library."""
+        from ..config import CONFIG
+        import sqlite3
+        path = Path(item["local_path"])
+        if not path.is_file():
+            return
+        item["data_studio_asset_id"] = str(item["asset_id"])
+        db = sqlite3.connect(CONFIG.data_studio_db)
+        try:
+            db.execute("""INSERT INTO assets
+              (id,source,title,folder,kind,format,locator_type,container,
+               inner_path,aux_json,animated,status,size,metadata_json)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+              ON CONFLICT(id) DO UPDATE SET title=excluded.title,
+              container=excluded.container,status='ready',size=excluded.size,
+              metadata_json=excluded.metadata_json""",
+              (item["asset_id"], f"Project / {project_id}", item["name"],
+               "AlphaMotion Generated", "smplh_motion", "npz", "direct",
+               str(path), "", "{}", 1, "ready", path.stat().st_size,
+               json.dumps({"frames": item.get("frames", 0),
+                           "fps": item.get("fps", 30.0),
+                           "project_id": project_id,
+                           "generation_method": item.get("generation_method", "")})))
+            db.commit()
+        finally:
+            db.close()
+
+    def _ensure_generated_smplh_arrays(path: Path) -> bool:
+        """Backfill standard poses/trans arrays for results made by old builds."""
+        with np.load(path, allow_pickle=False) as raw:
+            version = int(np.asarray(raw.get("alphamotion_smplh_export_version", 0)).reshape(()))
+            if "poses" in raw and "trans" in raw and version >= 2:
+                return False
+            local = np.asarray(raw["local_rot6d"], np.float32)
+            root = np.asarray(raw["root_cm"], np.float32)
+            values = {key: raw[key] for key in raw.files}
+        from scipy.spatial.transform import Rotation
+        from ..engine.nets.rotations import rot6d_to_matrix
+        matrices = rot6d_to_matrix(torch.from_numpy(local)).numpy()
+        basis = Rotation.from_euler("x", -90, degrees=True).as_matrix()
+        matrices = basis.T @ matrices @ basis
+        poses = np.zeros((len(local), 156), np.float32)
+        poses[:, :66] = Rotation.from_matrix(
+            matrices.reshape(-1, 3, 3)).as_rotvec().reshape(-1, 66)
+        values.update(poses=poses, trans=(root / 100.0) @ basis,
+                      mocap_frame_rate=np.asarray(30.0, np.float32),
+                      alphamotion_smplh_export_version=np.asarray(2, np.uint8))
+        temporary = path.with_suffix(".migration.npz")
+        np.savez_compressed(temporary, **values)
+        temporary.replace(path)
+        return True
 
     def _project_smpl_generations(project_id: str) -> list[dict]:
         root = data_dir() / "generated_smpl" / project_id
@@ -874,6 +980,27 @@ def create_app() -> FastAPI:
                     if str(item.get("source") or "").lower().startswith("genmo"):
                         item["source"] = "AlphaMotion"
                     if Path(item.get("local_path", "")).is_file():
+                        changed = _ensure_generated_smplh_arrays(Path(item["local_path"]))
+                        if item.get("data_studio_asset_id") != item.get("asset_id"):
+                            item["data_studio_asset_id"] = item.get("asset_id")
+                            changed = True
+                        if not item.get("imported"):
+                            item["imported"] = True
+                            changed = True
+                        _register_generated_data_studio_asset(project_id, item)
+                        state["projects"].add_media(
+                            project_id, motions=[item], bin_name="AlphaMotion generated")
+                        if changed:
+                            # The Data Studio decoder keeps a GLB beside each
+                            # asset; invalidate it whenever we repair the source
+                            # coordinate conversion.
+                            from ..config import CONFIG
+                            import shutil
+                            prepared = Path(CONFIG.data_studio_cache) / "prepared" / "v4"
+                            for cached in prepared.glob(f"*/{item['asset_id']}"):
+                                shutil.rmtree(cached, ignore_errors=True)
+                            path.write_text(json.dumps(item, ensure_ascii=False, indent=2),
+                                            encoding="utf-8")
                         state["smpl_generations"][item["generation_id"]] = item
                         result.append(item)
                 except (OSError, ValueError, KeyError, TypeError):
@@ -961,6 +1088,56 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "project motion source file is missing")
         return await POOL.run(_preview_smpl_file(
             path, item.get("name") or path.stem, float(item.get("fps", 30.0))))
+
+    @app.get("/api/projects/{project_id}/media/preview.webp")
+    async def project_media_skin_preview(project_id: str, asset_id: str):
+        """Animated neutral-SMPL-X thumbnail for project-native generated clips."""
+        try:
+            project = state["projects"].get(project_id)
+        except KeyError as exc:
+            raise HTTPException(404, "project not found") from exc
+        item = next((motion for motion in
+                     (project.get("assets") or {}).get("motions", [])
+                     if str(motion.get("asset_id")) == asset_id), None)
+        if item is None or not item.get("local_path"):
+            raise HTTPException(404, "project motion has no local SMPL source")
+        source = Path(item["local_path"])
+        if not source.is_file():
+            raise HTTPException(404, "project motion source file is missing")
+        from ..paths import cache_dir
+        revision = hashlib.sha1(
+            f"project-smpl-preview-v1|{asset_id}|{source.stat().st_mtime_ns}".encode()
+        ).hexdigest()
+        target = cache_dir() / "project_smpl_previews" / f"{revision}.webp"
+        if not target.is_file():
+            def work():
+                with np.load(source, allow_pickle=False) as raw:
+                    local = np.asarray(raw["local_rot6d"], np.float32)
+                    root = np.asarray(raw["root_cm"], np.float32)
+                    hands = np.asarray(raw["hand_pose"], np.float32) \
+                        if "hand_pose" in raw else None
+                    betas = np.asarray(raw["betas"], np.float32) \
+                        if "betas" in raw else None
+                if local.ndim != 3 or local.shape[1:] != (22, 6):
+                    raise ValueError("only AlphaMotion-generated SMPL files have thumbnails")
+                from ..engine.spatial import build_global
+                from ..viz.smplx_skin import animated_preview_webp, skin_global_rot6d
+                spec, _dof, _rest = POOL.human
+                rotations, _pos, _reach = build_global(
+                    torch.from_numpy(local), spec, "cpu")
+                vertices, faces = skin_global_rot6d(
+                    rotations.numpy(), spec.parents, root_cm=root,
+                    hand_pose=hands if hands is not None and hands.size else None,
+                    betas=betas, device=POOL.device)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(animated_preview_webp(vertices, faces, fps=float(
+                    item.get("fps", 30.0))))
+            try:
+                await POOL.run(work)
+            except (OSError, ValueError, KeyError) as exc:
+                raise HTTPException(422, f"project motion thumbnail unavailable: {exc}") from exc
+        return FileResponse(target, media_type="image/webp",
+                            headers={"cache-control": "public, max-age=31536000"})
 
     @app.post("/api/projects/{project_id}/smpl-generations/{generation_id}/commit")
     async def commit_smpl_generation(project_id: str, generation_id: str,
@@ -1512,7 +1689,8 @@ def create_app() -> FastAPI:
             upd(status="failed", error="superseded by a newer interactive request",
                 finished_at=dt.datetime.utcnow())
         except Exception as exc:  # noqa: BLE001
-            upd(status="failed", error=str(exc)[:2000],
+            detail = str(exc).strip() or repr(exc)
+            upd(status="failed", error=detail[:2000],
                 finished_at=dt.datetime.utcnow())
 
     @app.get("/api/jobs/{job_id}")
@@ -1809,6 +1987,34 @@ def create_app() -> FastAPI:
                 if root is not None:
                     root = resample_continuous(root, seg.n)
             return codes, name, fam, root
+        if seg.kind == "project_smpl":
+            if not seg.project_id or not seg.project_asset_id:
+                raise ValueError("project SMPL segment is missing its project asset")
+            project = state["projects"].get(seg.project_id)
+            item = next((value for value in (project.get("assets") or {}).get("motions", [])
+                         if str(value.get("asset_id")) == seg.project_asset_id), None)
+            if item is None or not Path(item.get("local_path", "")).is_file():
+                raise ValueError("project SMPL source is unavailable")
+            with np.load(item["local_path"], allow_pickle=False) as raw:
+                local = torch.from_numpy(np.asarray(raw["local_rot6d"], np.float32))
+                root = np.asarray(raw["root_cm"], np.float64)
+            from ..perception.genmo import local_to_global_rot6d
+            gw = POOL.greenwich
+            hspec, hdof, _rest = POOL.human
+            global6d = local_to_global_rot6d(local)
+            pose9, _reach = gw.pose9(global6d, hspec, is_global=True)
+            codes = gw.encode(pose9.to(POOL.device), hspec, hdof)
+            base_n = seg.source_frames or len(codes)
+            if base_n != len(codes) or seg.n != len(codes):
+                from ..engine.timeline import interpolate_lattice, resample_continuous
+                target_n = seg.n if seg.n != len(codes) else base_n
+                tokens, ep = eq.tokenize(codes)
+                rot_codes = interpolate_lattice(codes[:, 128:], target_n)
+                codes = eq.detokenize(tokens, ep, target_n,
+                                      boundary_codes=torch.stack([codes[0], codes[-1]]),
+                                      rot_codes=rot_codes)
+                root = resample_continuous(root, target_n)
+            return codes, str(item.get("name") or "AlphaMotion generated"), "other", root
         raise ValueError(f"segment kind '{seg.kind}' not handled here")
 
     def _bridge_codes(eq, prev_codes, next_codes, n, seed, temperature,
@@ -2282,6 +2488,39 @@ def create_app() -> FastAPI:
 
         return await POOL.run(work, latest_key="interactive-preview")
 
+    @app.post("/api/viewer/preview/project-smpl")
+    async def preview_project_smpl_on_timeline(
+            project_id: str = Query(min_length=1, max_length=64),
+            asset_id: str = Query(min_length=1, max_length=128),
+            n: int = Query(default=60, ge=1, le=10_000),
+            target_body: str = Query(default="unitree_h1", min_length=1,
+                                     max_length=128)):
+        """Preview a project-native AlphaMotion SMPL source on the robot."""
+        lib, emb = state["library"], _require_body(target_body)
+        if not emb.xml or not Path(emb.xml).is_file():
+            raise HTTPException(422, "selected body has no renderable mesh")
+        key = ("project-smpl", project_id, asset_id, int(n), target_body)
+        revision = state["viewer_revision"]
+        def work():
+            cache = state["timeline_previews"]
+            if key in cache:
+                trace = cache[key]; cache.move_to_end(key)
+            else:
+                seg = Segment(kind="project_smpl", project_id=project_id,
+                              project_asset_id=asset_id, n=n)
+                codes, name, _fam, root = _segment_codes(
+                    seg, POOL.equator, lib, target_body)
+                trace, _ = _preview_trace(codes, target_body, name, root_t=root)
+                cache[key] = trace; cache.move_to_end(key)
+                while len(cache) > 20:
+                    cache.popitem(last=False)
+            if revision != state["viewer_revision"]:
+                return {**state["live"].transport_state(), "stale": True}
+            state["live"].set_trace(trace, emb.xml, target_body)
+            return {**state["live"].transport_state(), "title": trace.title,
+                    "preview": True}
+        return await POOL.run(work, latest_key="interactive-preview")
+
     @app.post("/api/viewer/preview/timeline")
     async def preview_uncompiled_timeline(req: TimelineRequest):
         """Build one frame-accurate editor preview without generating gaps.
@@ -2295,7 +2534,7 @@ def create_app() -> FastAPI:
         emb = _require_body(req.target_body)
         if not emb.xml or not Path(emb.xml).is_file():
             raise HTTPException(422, "selected body has no renderable mesh")
-        if any(seg.kind not in ("library", "motion", "gap")
+        if any(seg.kind not in ("library", "motion", "project_smpl", "gap")
                for seg in req.segments):
             raise HTTPException(
                 422, "prompt and video segments must be generated before preview")
@@ -2322,7 +2561,7 @@ def create_app() -> FastAPI:
                     seg.world_position_m is not None or
                     seg.world_end_position_m is not None
                     for seg in req.segments
-                    if seg.kind in ("library", "motion"))
+                    if seg.kind in ("library", "motion", "project_smpl"))
                 for seg in req.segments:
                     if seg.kind == "gap":
                         if not chunks:
@@ -2666,6 +2905,16 @@ def create_app() -> FastAPI:
         from ..perception.genmo import motion_from_prompt, motion_from_video
         gw = POOL.greenwich
         hspec, hdof, _ = POOL.human
+        # Prompt/video placeholders are source clips.  Replaying, seeking, or
+        # compiling them must reuse the same generated SMPL result instead of
+        # starting a second GPU inference for every play press.
+        identity = (seg.kind, str(seg.text or seg.video_asset or ""), int(seg.n))
+        cache = state["perception_cache"]
+        cached = cache.get(identity)
+        if cached is not None:
+            cache.pop(identity)
+            cache[identity] = cached
+            return cached[0].to(POOL.device), np.asarray(cached[1], np.float64).copy()
         if seg.kind == "prompt":
             rot6d, root_t = motion_from_prompt(seg.text, seg.n / 30.0)
         else:
@@ -2675,7 +2924,11 @@ def create_app() -> FastAPI:
                 raise ValueError("video asset is not a registered upload")
             rot6d, root_t = motion_from_video(str(video), seg.n)
         p9, _ = gw.pose9(rot6d, hspec, is_global=True)
-        return gw.encode(p9.to(POOL.device), hspec, hdof), root_t
+        codes = gw.encode(p9.to(POOL.device), hspec, hdof).detach().cpu()
+        cache[identity] = (codes, np.asarray(root_t, np.float64).copy())
+        while len(cache) > 12:
+            cache.pop(next(iter(cache)))
+        return codes.to(POOL.device), np.asarray(root_t, np.float64).copy()
 
     # ----------------------------------------------------------- ingest -----
     @app.post("/api/bodies/ingest", status_code=202)

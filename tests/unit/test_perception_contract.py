@@ -3,11 +3,26 @@ import torch
 
 from alphamotion.perception.genmo import (
     _load_space_motion,
+    _space_job_result,
     global_to_local_rot6d,
     local_to_global_rot6d,
     smpl_root_translation,
     smpl_to_global_rot6d,
 )
+
+
+class _FailedSpaceJob:
+    def result(self, timeout):
+        raise RuntimeError()
+
+    def status(self):
+        class _Code:
+            value = "FAILED"
+
+        class _Status:
+            code = _Code()
+
+        return _Status()
 
 
 def _artifact():
@@ -57,3 +72,15 @@ def test_remote_space_npz_is_safe_and_anchored(tmp_path):
     np.testing.assert_allclose(anchored[0], 0.0)
     np.testing.assert_allclose(anchored[-1], [4.0, 0.0, -8.0])
     assert fps == 30.0
+
+
+def test_remote_space_failure_keeps_context():
+    try:
+        _space_job_result(_FailedSpaceJob(), "text generation")
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected AlphaMotion Cloud failure")
+    assert "AlphaMotion Cloud text generation failed" in message
+    assert "RuntimeError()" in message
+    assert "queue status: FAILED" in message
