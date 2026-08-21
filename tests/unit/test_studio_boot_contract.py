@@ -69,6 +69,17 @@ def test_alphamotion_workflows_are_separate_between_data_and_motion_studios():
     assert "GENMO" not in frontend
 
 
+def test_data_studio_has_no_generated_motion_archive_panel():
+    frontend = (
+        Path(__file__).parents[2]
+        / "src/alphamotion/assets/frontend/index.html"
+    ).read_text()
+
+    assert 'id="aiArchive"' not in frontend
+    assert 'id="aiGenerationList"' not in frontend
+    assert "loadAIGenerations" not in frontend
+
+
 def test_data_studio_assets_preview_on_click_until_select_mode():
     frontend = (
         Path(__file__).parents[2]
@@ -78,7 +89,6 @@ def test_data_studio_assets_preview_on_click_until_select_mode():
     assert "if(!dsSharedSelectMode){openDataStudioPreview(item);return}" in frontend
     assert "if(!dsLocalSelectMode||kind!=='motion'){kind==='motion'?openProjectMotionPreview(item):openRobotAsset(item.name);return}" in frontend
     assert "if(!dsRobotSelectMode){openRobotAsset(item.name);return}" in frontend
-    assert "card.ondblclick=()=>{openMotionGenerator('dataStudio')" in frontend
 
 
 def test_data_studio_library_uses_explicit_selection_mode():
