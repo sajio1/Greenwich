@@ -56,6 +56,23 @@ def _unique(values: list[Any], *, integer: bool = False) -> list[Any]:
     return result
 
 
+def _normalize_alphamotion_branding(project: dict[str, Any]) -> dict[str, Any]:
+    """Hide legacy generator branding when older project files are opened."""
+    assets = project.get("assets") or {}
+    for motion in assets.get("motions") or []:
+        name = str(motion.get("name") or "")
+        if name.lower().startswith("genmo ·"):
+            motion["name"] = "AlphaMotion ·" + name.split("·", 1)[1]
+        if str(motion.get("origin") or "").lower() == "genmo":
+            motion["origin"] = "alphamotion"
+        if str(motion.get("source") or "").lower().startswith("genmo"):
+            motion["source"] = "AlphaMotion"
+    for media_bin in assets.get("bins") or []:
+        if str(media_bin.get("name") or "").lower().startswith("genmo"):
+            media_bin["name"] = "AlphaMotion SMPL"
+    return project
+
+
 class ProjectStore:
     """Atomic project documents plus a private media directory per project."""
 
@@ -83,7 +100,7 @@ class ProjectStore:
             raise KeyError(path.name.split(".", 1)[0]) from exc
         if not isinstance(value, dict):
             raise ValueError(f"invalid project document: {path.name}")
-        return value
+        return _normalize_alphamotion_branding(value)
 
     def _write(self, project: dict[str, Any]) -> None:
         path = self._path(project["id"])

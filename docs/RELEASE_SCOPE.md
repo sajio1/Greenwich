@@ -21,8 +21,8 @@ require a downstream physics controller.
 
 ## Optional, configuration-gated
 
-- GENMO text-to-motion and video-to-SMPL run in a separately licensed external
-  environment. AlphaMotion provides a
+- AlphaMotion text-to-motion and video-to-SMPL run in a separately licensed
+  generation environment. AlphaMotion provides a
   bounded upload channel and common SMPL-22 adapter, but does not re-host or
   silently emulate third-party weights.
 - New joint names use the checkpoint's Qwen3 semantic tower when installed.

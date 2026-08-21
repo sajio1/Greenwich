@@ -67,7 +67,7 @@ def _fps(data) -> float:
 
 
 def _motion(data) -> dict[str, np.ndarray | float | int | str]:
-    # AlphaMotion-native SMPL assets (including GENMO Data Studio results)
+    # AlphaMotion-native SMPL assets (including generated Data Studio results)
     # already use the audited local-rotation/Y-up contract.  Accept them
     # directly so sharing does not round-trip through lossy axis-angle files.
     if "local_rot6d" in data and "root_cm" in data:

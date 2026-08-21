@@ -1,4 +1,4 @@
-"""Private Gradio/ZeroGPU adapter for the official NVlabs GENMO demo."""
+"""Private Gradio/ZeroGPU worker for AlphaMotion generation."""
 # ruff: noqa: I001
 from __future__ import annotations
 
@@ -24,7 +24,8 @@ from huggingface_hub import hf_hub_download
 ROOT = Path(__file__).resolve().parent
 GENMO_DIR = ROOT / "GENMO"
 GENMO_REVISION = "16bebf402d8893184249ee206d957b8248cd8310"
-ASSET_REPO = os.environ.get("GENMO_ASSET_REPO", "").strip()
+ASSET_REPO = os.environ.get(
+    "ALPHAMOTION_ASSET_REPO", os.environ.get("GENMO_ASSET_REPO", "")).strip()
 HF_TOKEN = os.environ.get("HF_TOKEN")
 DEFAULT_TEXT_FRAMES = 300
 
@@ -62,7 +63,7 @@ def _prepare_body_model() -> None:
 def _asset(filename: str, destination: Path) -> Path:
     if not ASSET_REPO:
         raise RuntimeError(
-            "Set the private Space secret GENMO_ASSET_REPO before startup.")
+            "Set the private Space variable ALPHAMOTION_ASSET_REPO before startup.")
     source = Path(hf_hub_download(
         ASSET_REPO, filename=filename, token=HF_TOKEN))
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -124,7 +125,7 @@ def _safe_artifact(pred: dict, segment_info: list[dict],
         info = next((item for item in segment_info
                      if item["type"] == segment_type), None)
         if info is None:
-            raise RuntimeError(f"GENMO did not return a {segment_type} segment")
+            raise RuntimeError(f"AlphaMotion did not return a {segment_type} segment")
         selected = slice(int(info["start"]), int(info["end"]))
     orient = body["global_orient"].detach().float().cpu().numpy()
     pose = body["body_pose"].detach().float().cpu().numpy()
@@ -135,11 +136,11 @@ def _safe_artifact(pred: dict, segment_info: list[dict],
         [local_matrix[..., :, 0], local_matrix[..., :, 1]], axis=-1)
     root = body["transl"].detach().float().cpu().numpy()[selected]
     if len(local_rot6d) == 0 or root.shape != (len(local_rot6d), 3):
-        raise RuntimeError("GENMO returned an empty or malformed motion")
+        raise RuntimeError("AlphaMotion returned an empty or malformed motion")
     root_cm = (root - root[:1]) * 100.0
     if not np.isfinite(local_rot6d).all() or not np.isfinite(root_cm).all():
-        raise RuntimeError("GENMO returned NaN or infinity")
-    output = Path(tempfile.mkstemp(prefix="alphamotion-genmo-",
+        raise RuntimeError("AlphaMotion returned NaN or infinity")
+    output = Path(tempfile.mkstemp(prefix="alphamotion-motion-",
                                    suffix=".npz")[1])
     np.savez_compressed(
         output, local_rot6d=local_rot6d.astype(np.float32),
@@ -177,7 +178,7 @@ def _predict(inputs: list[str], text_frames: int,
         else:
             processed.append(segment)
     if reference_k is None:
-        raise RuntimeError("GENMO requires one reference video")
+        raise RuntimeError("AlphaMotion requires one reference video")
     for index, item in enumerate(processed):
         if item.get("type") == "text" and "K_fullimg" not in item:
             processed[index] = create_text_segment(
@@ -226,15 +227,15 @@ def generate_video(video_path: str, _requested_frames: int = 0) -> str:
     return _predict([normalized], 60, None)
 
 
-with gr.Blocks(title="AlphaMotion GENMO") as demo:
+with gr.Blocks(title="AlphaMotion Generation") as demo:
     gr.Markdown(
-        "# AlphaMotion GENMO worker\nPrivate ZeroGPU inference service. "
+        "# AlphaMotion generation worker\nPrivate ZeroGPU inference service. "
         "Use the main AlphaMotion Studio for the complete workflow.")
     with gr.Tab("Text → SMPL"):
         text = gr.Textbox(label="Motion prompt")
         frames = gr.Number(value=DEFAULT_TEXT_FRAMES, minimum=30, step=1,
                            precision=0,
-                           label="Frames at 30 FPS (GENMO default: 300)")
+                           label="Frames at 30 FPS (AlphaMotion default: 300)")
         text_output = gr.File(label="AlphaMotion NPZ")
         gr.Button("Generate").click(
             generate_text, [text, frames], text_output,

@@ -20,18 +20,17 @@ feature is not considered usable merely because its button renders.
 ## Runtime model ownership
 
 Text-to-motion and video-to-motion both use the optional, separately installed
-**GENMO** adapter in `src/alphamotion/perception/genmo.py`. The AlphaMotion
-process does not import GENMO; it launches the configured GENMO Python process
-and consumes its SMPL artifact. This audit deliberately does not run GENMO
-inference on the local 12 GB GPU.
+AlphaMotion generation worker. The main AlphaMotion process does not load its
+heavy model; it launches the configured worker and consumes its SMPL artifact.
+This audit deliberately does not run inference on the local 12 GB GPU.
 
 Required configuration:
 
-- `ALPHAMOTION_GENMO_REPO`: official GENMO checkout containing
+- `ALPHAMOTION_GENERATION_REPO`: generation checkout containing
   `scripts/demo/demo_smpl.py`.
-- `ALPHAMOTION_GENMO_PYTHON`: Python executable in the GENMO environment.
+- `ALPHAMOTION_GENERATION_PYTHON`: Python executable in the generation environment.
 - Text generation additionally requires the cached
-  `genmo_reference.mp4`. Video generation does not require that reference.
+  AlphaMotion reference video. Video generation does not require that reference.
 
 `GET /api/health` exposes separate `perception_text` and `perception_video`
 flags. The corresponding controls must remain disabled when a capability is
@@ -44,7 +43,7 @@ explicit alternative backend; they must not silently become the default.
 | Surface | Status | What works | Limitations / required follow-up |
 | --- | --- | --- | --- |
 | File > New Sequence | Working | Clears the current timeline through the same action as the timeline Clear control. | **AUD-001:** no unsaved-change confirmation and no persisted project document. |
-| File > Upload Video for Motion | Conditional | Opens the video picker only after checking `perception_video`; uploaded duration is converted to timeline frames at the selected FPS. | Requires GENMO. There is no resumable upload or multi-person selection. |
+| File > Upload Video for Motion | Conditional | Opens the video picker only after checking `perception_video`; uploaded duration is converted to timeline frames at the selected FPS. | Requires AlphaMotion generation. There is no resumable upload or multi-person selection. |
 | File > Generate / Export | Conditional | Submits the real timeline job and optionally renders MP4. | Requires a valid timeline, a usable target body, all referenced model assets, and FFmpeg for MP4. The name is not a general file export command. |
 | File menu as a desktop-style project menu | Not implemented | — | **AUD-002:** Open Project, Save, Save As, project autosave, media relink, and recent projects do not exist. Do not add labels for them until storage semantics exist. |
 | Edit menu | Working | Undo, redo, and delete selected share the timeline history and keyboard handlers. | History is session-only and does not include every server-side generation side effect. |
@@ -66,7 +65,7 @@ explicit alternative backend; they must not silently become the default.
 
 ## Known product risks
 
-1. **GENMO is capability-gated, not locally validated in this audit.** Static
+1. **AlphaMotion generation is capability-gated, not locally validated in this audit.** Static
    contracts and failure behavior are checked; output quality, runtime, and
    VRAM use require a suitable machine.
 2. **Bridge generation is not a dynamics planner.** Continuity/QC checks do not
@@ -95,7 +94,7 @@ explicit alternative backend; they must not silently become the default.
   Zoom, and Generate / Export; no application errors were logged. The only
   browser warnings were upstream Three.js deprecation warnings for
   `THREE.Clock`.
-- GENMO: capability discovery reports text and video ready for the configured
+- AlphaMotion generation: capability discovery reports text and video ready for the configured
   external environment. Inference was intentionally not run on this machine,
   so output quality, runtime, and VRAM usage remain unverified here.
 
@@ -107,7 +106,7 @@ called implemented:
 1. Frontend JavaScript parses with `node --check` after extracting the inline
    script.
 2. Python modules compile and the non-GPU, non-slow pytest suite passes.
-3. The service starts without importing GENMO or another optional heavy model.
+3. The service starts without importing an optional heavy generation model.
 4. `GET /api/health`, `/api/library-datasets`, `/api/library-facets`,
    `/api/bodies`, and `/api/motions` return valid payloads.
 5. Empty timeline means an empty Program Monitor; adding, deleting, splitting,
@@ -115,9 +114,9 @@ called implemented:
 6. Every visible menu item and icon button either performs a real action,
    opens an implemented panel, or is visibly disabled with a capability
    explanation. Inert controls are release blockers.
-7. GENMO-disabled smoke: text and video controls are disabled and the rest of
+7. Generation-disabled smoke: text and video controls are disabled and the rest of
    Motion Studio remains usable.
-8. GENMO-enabled smoke on capable hardware: one short prompt and one short
+8. Generation-enabled smoke on capable hardware: one short prompt and one short
    video produce finite `[T, 22, 6]` global rotations plus `[T, 3]` root
    translation and persist a motion asset.
 9. Data-Studio-disabled smoke: the tab reports a clear 503/unavailable state

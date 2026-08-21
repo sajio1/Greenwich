@@ -3,7 +3,7 @@
 ## Recommended small-demo host
 
 - Ubuntu 24.04, `t3.large` (2 vCPU / 8 GB) to start. The UI and
-  BodyDataStudio are CPU workloads; GENMO is remote. Add an 8 GB swap file on
+  BodyDataStudio are CPU workloads; AlphaMotion generation is remote. Add an 8 GB swap file on
   the EBS volume if the first full-corpus index briefly peaks above RAM.
 - 150 GB encrypted gp3 EBS volume mounted at `/srv/alphamotion`.
 - Security group: inbound 80/443 from the Internet; port 22 only from the

@@ -40,17 +40,27 @@ class AMConfig:
     # target motion, body audit, and independent SMPL-X source comparison.
     viewer_ports: tuple[int, int, int] = (7871, 7876, 7877)
     hf_repo: str = os.environ.get("ALPHAMOTION_HF_REPO", "lloydlei/Greenwich")
-    # Optional text/video perception runs through a separately installed GENMO
-    # environment so its large weights never share AlphaMotion's warm process.
-    genmo_python: str = os.environ.get("ALPHAMOTION_GENMO_PYTHON", "")
-    genmo_repo: str = os.environ.get("ALPHAMOTION_GENMO_REPO", "")
+    # Optional text/video generation runs in a separate environment so its
+    # large weights never share AlphaMotion's warm process. Old variable names
+    # remain fallback-only so existing private deployments keep working.
+    genmo_python: str = os.environ.get(
+        "ALPHAMOTION_GENERATION_PYTHON",
+        os.environ.get("ALPHAMOTION_GENMO_PYTHON", ""))
+    genmo_repo: str = os.environ.get(
+        "ALPHAMOTION_GENERATION_REPO",
+        os.environ.get("ALPHAMOTION_GENMO_REPO", ""))
     # Cloud deployments use a private Gradio/ZeroGPU Space instead of a
     # workstation-local subprocess. The token is a server-side secret and is
     # never exposed to the browser.
-    genmo_space: str = os.environ.get("ALPHAMOTION_GENMO_SPACE", "")
-    genmo_token: str = os.environ.get("ALPHAMOTION_GENMO_TOKEN", "")
+    genmo_space: str = os.environ.get(
+        "ALPHAMOTION_GENERATION_SPACE",
+        os.environ.get("ALPHAMOTION_GENMO_SPACE", ""))
+    genmo_token: str = os.environ.get(
+        "ALPHAMOTION_GENERATION_TOKEN",
+        os.environ.get("ALPHAMOTION_GENMO_TOKEN", ""))
     genmo_timeout_s: int = int(os.environ.get(
-        "ALPHAMOTION_GENMO_TIMEOUT_S", "900"))
+        "ALPHAMOTION_GENERATION_TIMEOUT_S",
+        os.environ.get("ALPHAMOTION_GENMO_TIMEOUT_S", "900")))
     # Kept for compatibility with deployments created while the experimental
     # MoMask/GVHMR adapter was available; neither field is used at runtime.
     motion_python: str = os.environ.get(

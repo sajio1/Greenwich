@@ -53,7 +53,7 @@ def test_motion_workspace_exposes_persistent_panel_dividers():
     assert "alphamotion-panel-layout" in frontend
 
 
-def test_genmo_workflows_are_separate_between_data_and_motion_studios():
+def test_alphamotion_workflows_are_separate_between_data_and_motion_studios():
     frontend = (
         Path(__file__).parents[2]
         / "src/alphamotion/assets/frontend/index.html"
@@ -66,6 +66,7 @@ def test_genmo_workflows_are_separate_between_data_and_motion_studios():
     assert "openMotionGenerator('studio')" in frontend
     assert "Place placeholder on timeline" in frontend
     assert "/smpl-generations/${encodeURIComponent(item.generation_id)}/commit" in frontend
+    assert "GENMO" not in frontend
 
 
 def test_data_studio_assets_preview_on_click_until_select_mode():

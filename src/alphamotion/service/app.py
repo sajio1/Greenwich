@@ -788,7 +788,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/projects/{project_id}/generate-smpl", status_code=202)
     async def generate_project_smpl(project_id: str, payload: dict):
-        """Run GENMO into a project-local SMPL asset, never a robot trace."""
+        """Generate a project-local AlphaMotion SMPL asset, never a robot trace."""
         try:
             state["projects"].get(project_id)
         except KeyError as exc:
@@ -821,15 +821,15 @@ def create_app() -> FastAPI:
                 generation_id = uuid.uuid4().hex[:16]
                 target_root = data_dir() / "generated_smpl" / project_id
                 target_root.mkdir(parents=True, exist_ok=True)
-                target = target_root / f"{generation_id}.npz"
+                target = target_root / f"alphamotion-{generation_id}.npz"
                 np.savez_compressed(target, local_rot6d=local6d.astype(np.float16),
                                     root_cm=np.asarray(root_cm, np.float32),
                                     hand_pose=np.zeros((len(local6d), 0), np.float16),
                                     betas=np.zeros(10, np.float32), gender=np.asarray(0, np.uint8),
                                     model_family=np.asarray(0, np.uint8), fps=np.asarray(30.0))
                 asset_id = hashlib.sha1(str(target).encode()).hexdigest()[:24]
-                motion = {"asset_id": asset_id, "name": f"GENMO · {title}",
-                          "origin": "genmo", "source": "GENMO", "local_path": str(target),
+                motion = {"asset_id": asset_id, "name": f"AlphaMotion · {title}",
+                          "origin": "alphamotion", "source": "AlphaMotion", "local_path": str(target),
                           "data_studio_asset_id": asset_id,
                           "frames": len(local6d), "fps": 30.0, "state": "ready",
                           "generation_id": generation_id, "project_id": project_id,
@@ -850,6 +850,13 @@ def create_app() -> FastAPI:
             for path in root.glob("*.json"):
                 try:
                     item = json.loads(path.read_text(encoding="utf-8"))
+                    old_name = str(item.get("name") or "")
+                    if old_name.lower().startswith("genmo ·"):
+                        item["name"] = "AlphaMotion ·" + old_name.split("·", 1)[1]
+                    if str(item.get("origin") or "").lower() == "genmo":
+                        item["origin"] = "alphamotion"
+                    if str(item.get("source") or "").lower().startswith("genmo"):
+                        item["source"] = "AlphaMotion"
                     if Path(item.get("local_path", "")).is_file():
                         state["smpl_generations"][item["generation_id"]] = item
                         result.append(item)
@@ -949,7 +956,7 @@ def create_app() -> FastAPI:
             raise HTTPException(422, "select Import to Media, Share to Library, or both")
         if import_media and not item.get("imported"):
             state["projects"].add_media(
-                project_id, motions=[item], bin_name="GENMO SMPL")
+                project_id, motions=[item], bin_name="AlphaMotion SMPL")
             item["imported"] = True
         if share_library and not item.get("shared"):
             from ..config import CONFIG
@@ -966,7 +973,7 @@ def create_app() -> FastAPI:
                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                   ON CONFLICT(id) DO UPDATE SET status='ready',
                   metadata_json=excluded.metadata_json""",
-                  (item["asset_id"], "GENMO Shared", item["name"], "Generated",
+                  (item["asset_id"], "AlphaMotion Shared", item["name"], "Generated",
                    "smplh_motion", "npz", "direct", item["local_path"], "", "{}",
                    1, "ready", Path(item["local_path"]).stat().st_size,
                    json.dumps(metadata)))

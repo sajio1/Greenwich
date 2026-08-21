@@ -43,3 +43,21 @@ def test_remove_robot_and_reject_ambiguous_request(tmp_path):
     ]
     with pytest.raises(ValueError, match="selector"):
         store.remove_media(project["id"], kind="motion")
+
+
+def test_legacy_generation_branding_is_normalized_on_read(tmp_path):
+    store = ProjectStore(tmp_path)
+    project = store.create("editor")
+    store.add_media(
+        project["id"],
+        motions=[{"asset_id": "old", "name": "GENMO · walk",
+                  "origin": "genmo", "source": "GENMO"}],
+        bin_name="GENMO SMPL",
+    )
+
+    restored = store.get(project["id"])
+    motion = restored["assets"]["motions"][0]
+    assert motion["name"] == "AlphaMotion · walk"
+    assert motion["origin"] == "alphamotion"
+    assert motion["source"] == "AlphaMotion"
+    assert restored["assets"]["bins"][0]["name"] == "AlphaMotion SMPL"

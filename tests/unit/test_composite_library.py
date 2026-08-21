@@ -40,7 +40,7 @@ def test_composite_library_keeps_stable_ids_and_dataset_filter(tmp_path):
     assert result["total"] == 1
     assert result["items"][0]["id"] == 1
     assert result["items"][0]["source"] == "CMU"
-    assert result["items"][0]["preview_kind"] == "legacy-codec"
+    assert "preview_kind" not in result["items"][0]
     assert library.dataset_summary() == [
         {"id": "current", "label": "Current curated", "count": 1},
         {"id": "imported_smpl", "label": "Data Studio", "count": 1},

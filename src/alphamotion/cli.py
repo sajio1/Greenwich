@@ -41,9 +41,9 @@ def doctor():
         rows.append((f"weights/{k}", "ok" if ok else "not downloaded"))
     from .perception.genmo import status as perception_status
     perception = perception_status()
-    rows.append(("perception/text", "ok (GENMO)" if perception["text"]
+    rows.append(("perception/text", "ok (AlphaMotion)" if perception["text"]
                  else "not configured"))
-    rows.append(("perception/video", "ok (GENMO)" if perception["video"]
+    rows.append(("perception/video", "ok (AlphaMotion)" if perception["video"]
                  else "not configured"))
     rows.append(("cache", str(cache_dir())))
     rows.append(("data", str(data_dir())))
@@ -67,9 +67,8 @@ def download(third_party: bool = typer.Option(False, "--third-party",
     for k, v in out.items():
         typer.echo(f"  {k}: {v}")
     if third_party:
-        typer.echo("Text/video perception uses the separately installed GENMO "
-                   "checkout. Configure ALPHAMOTION_GENMO_REPO and "
-                   "ALPHAMOTION_GENMO_PYTHON; see deploy/README.md.")
+        typer.echo("Text/video generation uses the separately configured "
+                   "AlphaMotion generation worker; see deploy/README.md.")
 
 
 @app.command()

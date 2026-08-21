@@ -93,9 +93,9 @@ codec's intrinsic round-trip cost is a control, not a charge).
 
 ## Perception (optional)
 
-`perception/genmo.py` shells into a separate GENMO environment. Configure
-`ALPHAMOTION_GENMO_PYTHON` and `ALPHAMOTION_GENMO_REPO`; text requests also use
-the cached `genmo_reference.mp4` camera/reference clip. GENMO produces both text
+AlphaMotion generation runs in a separate environment. Configure
+`ALPHAMOTION_GENERATION_PYTHON` and `ALPHAMOTION_GENERATION_REPO`; text requests
+also use the cached AlphaMotion camera/reference clip. It produces both text
 motion and world-grounded SMPL motion for uploaded videos. The adapter converts
 both to the same global SMPL-22
 rotation-6D plus first-frame-anchored Y-up root-translation contract before

@@ -5,8 +5,8 @@ Greenwich + Equator (+ atlas index + human descriptor) live in-process
 so a single serialized lane beats CUDA context contention. The gateway stays
 async; every GPU call goes through run().
 
-Heavy GENMO perception never enters this process — it runs as an on-demand
-subprocess lane (perception.genmo) in its separately configured environment.
+Heavy AlphaMotion generation never enters this process — it runs as an
+on-demand subprocess lane in its separately configured environment.
 """
 from __future__ import annotations
 

@@ -25,17 +25,19 @@ SMPL_PARENTS = [-1, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 9, 9, 12, 13, 14,
 
 
 def status() -> dict:
-    """Cheap readiness probe used by health/UI; never imports GENMO itself."""
+    """Cheap readiness probe used by health/UI; never loads the model itself."""
     if CONFIG.genmo_space:
         missing = [] if CONFIG.genmo_token else ["space_token"]
         ready = bool(CONFIG.genmo_token)
         return {"ready": ready, "text": ready, "video": ready,
-                "backend": "GENMO ZeroGPU", "space": CONFIG.genmo_space,
+                "backend": "AlphaMotion Cloud", "space": CONFIG.genmo_space,
                 "missing": missing}
     python = Path(CONFIG.genmo_python) if CONFIG.genmo_python else None
     repo = Path(CONFIG.genmo_repo) if CONFIG.genmo_repo else None
     script = repo / "scripts" / "demo" / "demo_smpl.py" if repo else None
-    reference = cache_dir() / "genmo_reference.mp4"
+    reference = cache_dir() / "alphamotion_reference.mp4"
+    if not reference.is_file():
+        reference = cache_dir() / "genmo_reference.mp4"  # legacy deployment
     core_ready = bool(python and python.is_file() and script and
                       script.is_file())
     text_ready = core_ready and reference.is_file()
@@ -50,7 +52,7 @@ def status() -> dict:
     return {"ready": text_ready or video_ready,
             "text": text_ready,
             "video": video_ready,
-            "backend": "GENMO",
+            "backend": "AlphaMotion",
             "missing": missing}
 
 
@@ -59,10 +61,9 @@ def _require_env(*, needs_reference: bool = False):
     capability = "text" if needs_reference else "video"
     if not probe[capability]:
         raise RuntimeError(
-            "GENMO perception is not configured. Install GENMO in its own "
-            "environment, then set ALPHAMOTION_GENMO_PYTHON=<env>/bin/python "
-            "and ALPHAMOTION_GENMO_REPO=<genmo checkout>, and place a short "
-            "person clip at the reported genmo_reference.mp4 cache path. "
+            "AlphaMotion generation is not configured on this host. "
+            "Configure the AlphaMotion generation environment and place a short "
+            "person reference clip in the configured cache. "
             f"Missing: {', '.join(probe['missing'])}.")
 
 
@@ -153,7 +154,7 @@ def _space_client(space: str, token: str):
         from gradio_client import Client
     except ImportError as exc:
         raise RuntimeError(
-            "remote GENMO requires the perception extra: "
+            "AlphaMotion Cloud generation requires the perception extra: "
             "pip install 'alphamotion[perception]'") from exc
     return Client(space, token=token)
 
@@ -161,13 +162,13 @@ def _space_client(space: str, token: str):
 def _space_result_path(result) -> Path:
     if isinstance(result, (list, tuple)):
         if not result:
-            raise RuntimeError("GENMO Space returned an empty result")
+            raise RuntimeError("AlphaMotion Cloud returned an empty result")
         result = result[0]
     if isinstance(result, dict):
         result = result.get("path") or result.get("name")
     path = Path(str(result or ""))
     if not path.is_file():
-        raise RuntimeError(f"GENMO Space result is missing: {path}")
+        raise RuntimeError(f"AlphaMotion Cloud result is missing: {path}")
     return path
 
 
@@ -179,15 +180,15 @@ def _load_space_motion(result) -> tuple[torch.Tensor, np.ndarray, float]:
             root = np.asarray(payload["root_cm"], np.float64)
             fps = float(np.asarray(payload.get("fps", 30.0)).reshape(()))
     except (OSError, ValueError, KeyError) as exc:
-        raise RuntimeError(f"invalid GENMO Space artifact: {exc}") from exc
+        raise RuntimeError(f"invalid AlphaMotion Cloud artifact: {exc}") from exc
     if local.ndim != 3 or local.shape[1:] != (22, 6) or len(local) == 0:
-        raise RuntimeError("GENMO Space local_rot6d must have shape [T,22,6]")
+        raise RuntimeError("AlphaMotion Cloud local_rot6d must have shape [T,22,6]")
     if root.shape != (len(local), 3):
-        raise RuntimeError("GENMO Space root_cm must have shape [T,3]")
+        raise RuntimeError("AlphaMotion Cloud root_cm must have shape [T,3]")
     if not np.isfinite(local).all() or not np.isfinite(root).all():
-        raise RuntimeError("GENMO Space artifact contains NaN or infinity")
+        raise RuntimeError("AlphaMotion Cloud artifact contains NaN or infinity")
     if fps <= 0 or not np.isfinite(fps):
-        raise RuntimeError("GENMO Space fps must be positive")
+        raise RuntimeError("AlphaMotion Cloud fps must be positive")
     root = root - root[:1]
     return local_to_global_rot6d(torch.from_numpy(local)), root, fps
 
@@ -206,7 +207,7 @@ def _space_video(video_path: str,
         from gradio_client import handle_file
     except ImportError as exc:
         raise RuntimeError(
-            "remote GENMO requires the perception extra: "
+            "AlphaMotion Cloud generation requires the perception extra: "
             "pip install 'alphamotion[perception]'") from exc
     client = _space_client(CONFIG.genmo_space, CONFIG.genmo_token)
     requested = int(frames) if frames is not None else 0
@@ -221,7 +222,7 @@ def _space_video(video_path: str,
 def _run_genmo(inputs: list[str], text_len: int,
                *, needs_reference: bool = False) -> dict:
     _require_env(needs_reference=needs_reference)
-    staging = cache_dir() / "genmo_staging"
+    staging = cache_dir() / "alphamotion_generation"
     staging.mkdir(parents=True, exist_ok=True)
     cmd = [CONFIG.genmo_python, "scripts/demo/demo_smpl.py",
            "--input_list", *inputs, "--no_render", "--static_cam",
@@ -229,19 +230,21 @@ def _run_genmo(inputs: list[str], text_len: int,
     proc = subprocess.run(cmd, cwd=CONFIG.genmo_repo, text=True,
                           capture_output=True, timeout=1900, check=False)
     if proc.returncode != 0:
-        raise RuntimeError("GENMO failed: "
+        raise RuntimeError("AlphaMotion generation failed: "
                            + (proc.stderr[-1500:] or proc.stdout[-1500:]))
     stem = Path(inputs[0]).stem
     art = staging / f"{stem}_mix" / "smpl_params.pt"
     if not art.is_file():
-        raise RuntimeError(f"GENMO artifact missing: {art}")
+        raise RuntimeError(f"AlphaMotion generation artifact missing: {art}")
     return torch.load(art, map_location="cpu", weights_only=False)
 
 
 def reference_video() -> Path:
     """The cached reference clip whose preprocessing is prewarmed — GENMO needs
     one video for camera intrinsics even in text mode."""
-    ref = cache_dir() / "genmo_reference.mp4"
+    ref = cache_dir() / "alphamotion_reference.mp4"
+    if not ref.exists():
+        ref = cache_dir() / "genmo_reference.mp4"  # legacy deployment
     if not ref.exists():
         raise RuntimeError(
             "no reference video cached; copy any short person video to "
@@ -285,7 +288,7 @@ def motion_from_video(video_path: str, frames: int | None = None
         raise RuntimeError(f"video not found: {src}")
     if CONFIG.genmo_space:
         return _space_video(str(src), frames)
-    staged = cache_dir() / "genmo_staging" / "uploads" / src.name
+    staged = cache_dir() / "alphamotion_generation" / "uploads" / src.name
     staged.parent.mkdir(parents=True, exist_ok=True)
     if not staged.exists():
         shutil.copy2(src, staged)

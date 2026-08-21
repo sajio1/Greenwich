@@ -73,7 +73,7 @@ def main():
     parser.add_argument("--body", default="unitree_h1")
     parser.add_argument("--render", action="store_true")
     parser.add_argument("--perception", action="store_true",
-                        help="also run the configured GENMO text adapter")
+                        help="also run the configured AlphaMotion text generator")
     parser.add_argument("--out", default="artifacts/product_acceptance.json")
     args = parser.parse_args()
     base, body = args.base_url, args.body
