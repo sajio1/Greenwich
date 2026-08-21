@@ -60,8 +60,13 @@ def test_alphamotion_workflows_are_separate_between_data_and_motion_studios():
     ).read_text()
 
     assert 'id="generationReview"' in frontend
-    assert 'id="genImportMedia"' in frontend
-    assert 'id="genShareLibrary"' in frontend
+    assert 'id="genImportAction"' in frontend
+    assert 'id="genShareAction"' in frontend
+    assert 'id="genBothAction"' in frontend
+    assert 'id="generationElapsed"' in frontend
+    assert 'id="motionVideoDuration"' in frontend
+    assert 'id="genImportMedia"' not in frontend
+    assert 'id="genCommit"' not in frontend
     assert 'id="addAiSegment"' in frontend
     assert "openMotionGenerator('studio')" in frontend
     assert "Place placeholder on timeline" in frontend

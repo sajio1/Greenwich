@@ -796,6 +796,8 @@ def create_app() -> FastAPI:
         mode = str(payload.get("mode") or "prompt")
         text = str(payload.get("text") or "").strip()
         video_asset = str(payload.get("video_asset") or "").strip()
+        video_name = Path(str(payload.get("video_name") or video_asset)).name[:120]
+        source_duration = max(0.0, float(payload.get("source_duration_seconds") or 0.0))
         frames = max(30, int(payload.get("frames") or 300))
         if mode == "prompt" and not text:
             raise HTTPException(422, "prompt text is required")
@@ -816,7 +818,7 @@ def create_app() -> FastAPI:
                     if not video.is_relative_to(root) or not video.is_file():
                         raise ValueError("video asset is not a registered upload")
                     global6d, root_cm = motion_from_video(str(video), frames)
-                    title = Path(video_asset).stem[:120]
+                    title = Path(video_name).stem[:120]
                 local6d = global_to_local_rot6d(global6d).cpu().numpy()
                 generation_id = uuid.uuid4().hex[:16]
                 target_root = data_dir() / "generated_smpl" / project_id
@@ -834,6 +836,8 @@ def create_app() -> FastAPI:
                           "frames": len(local6d), "fps": 30.0, "state": "ready",
                           "generation_id": generation_id, "project_id": project_id,
                           "prompt": text if mode == "prompt" else "",
+                          "source_video_name": video_name if mode == "video" else "",
+                          "source_duration_seconds": source_duration if mode == "video" else 0.0,
                           "imported": False, "shared": False,
                           "generation_method": "text-to-smpl" if mode == "prompt" else "video-to-smpl"}
                 state["smpl_generations"][generation_id] = motion
@@ -954,10 +958,17 @@ def create_app() -> FastAPI:
         share_library = bool(payload.get("share_to_library"))
         if not import_media and not share_library:
             raise HTTPException(422, "select Import to Media, Share to Library, or both")
-        if import_media and not item.get("imported"):
-            state["projects"].add_media(
+        if import_media:
+            # The project manifest is the source of truth. Older builds could
+            # leave imported=true behind without a durable media reference;
+            # always upsert so a repeated click repairs that state.
+            project = state["projects"].add_media(
                 project_id, motions=[item], bin_name="AlphaMotion SMPL")
-            item["imported"] = True
+            item["imported"] = any(
+                str(motion.get("asset_id") or "") == item["asset_id"]
+                for motion in (project.get("assets") or {}).get("motions", []))
+            if not item["imported"]:
+                raise RuntimeError("project motion reference was not saved")
         if share_library and not item.get("shared"):
             from ..config import CONFIG
             import sqlite3
@@ -1486,9 +1497,15 @@ def create_app() -> FastAPI:
             j = s.get(Job, job_id)
             if not j:
                 raise HTTPException(404, "no such job")
+            finished = j.finished_at or dt.datetime.utcnow()
+            elapsed = max(0.0, (finished - j.created_at).total_seconds())
             return {"id": j.id, "kind": j.kind, "status": j.status,
                     "result": j.result, "error": j.error,
-                    "motion_id": j.motion_id}
+                    "motion_id": j.motion_id,
+                    "created_at": j.created_at.isoformat(),
+                    "finished_at": (j.finished_at.isoformat()
+                                    if j.finished_at else None),
+                    "elapsed_seconds": elapsed}
 
     @app.get("/api/results/{name}")
     def result_file(name: str):
