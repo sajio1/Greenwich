@@ -40,6 +40,7 @@ def test_composite_library_keeps_stable_ids_and_dataset_filter(tmp_path):
     assert result["total"] == 1
     assert result["items"][0]["id"] == 1
     assert result["items"][0]["source"] == "CMU"
+    assert result["items"][0]["preview_kind"] == "legacy-codec"
     assert library.dataset_summary() == [
         {"id": "current", "label": "Current curated", "count": 1},
         {"id": "imported_smpl", "label": "Data Studio", "count": 1},
@@ -101,5 +102,6 @@ def test_library_loads_full_source_sidecar_and_true_frame_count(tmp_path):
     assert motion["gender"] == "male"
     assert motion["model_family"] == "smplh"
     assert motion["hand_pose"].shape == (119, 90)
+    assert library.preview_kind(0) == "exact-source"
     assert library.motion_metrics(0) == {
         "vertical_range_cm": 12.5, "path_m": 1.25}

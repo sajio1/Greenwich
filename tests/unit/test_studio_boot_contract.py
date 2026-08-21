@@ -101,7 +101,8 @@ def test_imported_project_motions_keep_library_preview_and_tags():
         / "src/alphamotion/assets/frontend/index.html"
     ).read_text()
 
-    assert "observeAssetPreview(img,item.library_id)" in frontend
+    assert "observeAssetPreview(img,item.library_id,item.preview_kind)" in frontend
+    assert "textContent:'Legacy encoded motion'" in frontend
     assert "${kind==='motion'?localTags(item):''}" in frontend
     assert "item.data_role||(['starter','upload','data_studio_processed'].includes(item.origin)?'original':'')" in frontend
 

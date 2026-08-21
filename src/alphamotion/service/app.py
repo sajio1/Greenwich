@@ -76,6 +76,37 @@ def _library_preview_key(lib, library_id: int) -> str:
                          default=str).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()[:20]
 
+
+def _resolve_project_library_index(item: dict, lib) -> int | None:
+    """Resolve a project reference without trusting a stale dense row ID."""
+    def normalized_name(value) -> str:
+        name = str(value or "")
+        return name.split("/", 1)[-1] if "/" in name else name
+
+    asset_id = str(item.get("asset_id") or "")
+    if asset_id and not asset_id.startswith("library:"):
+        for index, candidate in enumerate(lib.asset_ids):
+            if str(candidate or "") == asset_id:
+                return index
+    expected_name = normalized_name(item.get("name"))
+    expected_source = str(item.get("source") or "")
+    try:
+        index = int(item.get("library_id"))
+        if (0 <= index < len(lib)
+                and normalized_name(lib.names[index]) == expected_name
+                and (not expected_source
+                     or str(lib.sources[index]) == expected_source)):
+            return index
+    except (TypeError, ValueError):
+        pass
+    if expected_name:
+        for index, candidate in enumerate(lib.names):
+            if (normalized_name(candidate) == expected_name
+                    and (not expected_source
+                         or str(lib.sources[index]) == expected_source)):
+                return index
+    return None
+
 def create_app() -> FastAPI:
     app = FastAPI(title="AlphaMotion", version="0.1.0")
     # Disabled unless ALPHAMOTION_ACCESS_TOKEN is set. A pure ASGI middleware
@@ -428,10 +459,14 @@ def create_app() -> FastAPI:
         except KeyError as exc:
             raise HTTPException(404, "project not found") from exc
         assets = project.get("assets") or {}
-        indices, asset_ids = state["projects"].motion_scope(project_id)
-        ready = state["library"].search(
-            offset=0, limit=100, allowed_indices=indices,
-            allowed_asset_ids=asset_ids)
+        lib = state["library"]
+
+        project_motions = list(assets.get("motions") or [])
+        resolved_indices = {
+            index for item in project_motions
+            if (index := _resolve_project_library_index(item, lib)) is not None}
+        ready = lib.search(offset=0, limit=max(100, len(resolved_indices)),
+                           allowed_indices=resolved_indices)
         ready_ids = {item.get("asset_id") for item in ready["items"]}
         ready_indices = {item["id"] for item in ready["items"]}
         from ..config import CONFIG
@@ -454,30 +489,29 @@ def create_app() -> FastAPI:
                        item.get("asset_id") or "")
 
         motions = []
-        for item in assets.get("motions") or []:
+        for item in project_motions:
             value = dict(item)
-            library_id = value.get("library_id")
-            if library_id is not None:
-                try:
-                    index = int(library_id)
-                    if 0 <= index < len(state["library"]):
-                        lib = state["library"]
-                        value.update({
-                            "library_id": index,
-                            "name": lib.names[index],
-                            "family": lib.families[index],
-                            "dataset": lib.datasets[index],
-                            "source": lib.sources[index],
-                            "data_role": lib.data_roles[index],
-                            "augmentation": lib.augmentations[index],
-                            "augmentation_value":
-                                lib.augmentation_values[index],
-                            "labels": list(lib.labels[index]),
-                            "variant_count": lib.variant_counts[index],
-                            "frames": lib.frames(index),
-                        })
-                except (TypeError, ValueError):
-                    pass
+            index = _resolve_project_library_index(value, lib)
+            if index is not None:
+                value.update({
+                    "library_id": index,
+                    "name": lib.names[index],
+                    "family": lib.families[index],
+                    "dataset": lib.datasets[index],
+                    "source": lib.sources[index],
+                    "data_role": lib.data_roles[index],
+                    "augmentation": lib.augmentations[index],
+                    "augmentation_value": lib.augmentation_values[index],
+                    "labels": list(lib.labels[index]),
+                    "variant_count": lib.variant_counts[index],
+                    "frames": lib.frames(index),
+                    "preview_kind": lib.preview_kind(index),
+                })
+            elif value.get("library_id") is not None:
+                # A dense library row number is not a durable identity. Do not
+                # silently bind an old project item to an unrelated new clip.
+                value["library_id"] = None
+                value["preview_kind"] = "unavailable"
             value["data_studio_asset_id"] = data_studio_asset_id(value)
             value["motion_ready"] = (value.get("library_id") in ready_indices or
                                      value.get("asset_id") in ready_ids)
@@ -1174,16 +1208,19 @@ def create_app() -> FastAPI:
         if library_id < 0 or library_id >= len(lib):
             raise HTTPException(404, "no such library clip")
         revision = _library_preview_key(lib, library_id)
+        preview_kind = lib.preview_kind(library_id)
         return {"id": int(library_id), "name": lib.names[library_id],
                 "family": lib.families[library_id],
                 "dataset": lib.datasets[library_id],
                 "source": lib.sources[library_id],
                 "frames": lib.frames(library_id), "fps": 30.0,
+                "preview_kind": preview_kind,
                 "skin": ("neutral SMPL-X · exact source parameters"
-                         if lib.source_motion(library_id) is not None else
-                         "neutral SMPL-X · decoded 60-frame window"),
-                "url": (f"/api/library/{library_id}/preview.webp"
-                        f"?revision={revision}")}
+                         if preview_kind == "exact-source" else
+                         "legacy encoded motion · original SMPL unavailable"),
+                "url": ((f"/api/library/{library_id}/preview.webp"
+                         f"?revision={revision}")
+                        if preview_kind == "exact-source" else None)}
 
     def _source_skin(library_id: int):
         lib = state["library"]
@@ -1226,6 +1263,9 @@ def create_app() -> FastAPI:
         lib = state["library"]
         if library_id < 0 or library_id >= len(lib):
             raise HTTPException(404, "no such library clip")
+        if lib.preview_kind(library_id) != "exact-source":
+            raise HTTPException(
+                409, "original SMPL source is unavailable for this legacy clip")
         from ..paths import cache_dir
         # The library is rebuilt and reordered as Data Studio publishes data.
         # A numeric library ID is therefore not a durable cache identity.
@@ -1326,6 +1366,9 @@ def create_app() -> FastAPI:
     async def preview_source_library(library_id: int = Query(ge=0)):
         lib = state["library"]
         _require_library_id(lib, library_id)
+        if lib.preview_kind(library_id) != "exact-source":
+            raise HTTPException(
+                409, "original SMPL source is unavailable for this legacy clip")
         def work():
             vertices, faces, name, fps, kind = _source_skin(library_id)
             state["source_live"].set_smplx_skin(

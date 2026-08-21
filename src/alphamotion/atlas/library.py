@@ -136,6 +136,14 @@ class Library:
                     "model_family": "smplh", "fps": 30.0}
         return None
 
+    def preview_kind(self, i: int) -> str:
+        """Describe whether a card can render authoritative source motion."""
+        i = int(i)
+        if self._source_dir is not None:
+            return ("exact-source" if (self._source_dir / f"{i:06d}.npz").is_file()
+                    else "unavailable")
+        return "exact-source" if self._source_rot is not None else "legacy-codec"
+
     def frames(self, i: int) -> int:
         return int(self.source_frames[int(i)])
 
@@ -232,6 +240,7 @@ class Library:
              "augmentation_value": self.augmentation_values[i],
              "labels": self.labels[i], "variant_count": self.variant_counts[i],
              "frames": self.frames(i),
+             "preview_kind": self.preview_kind(i),
              **self.motion_metrics(i)}
             for i in page]}
 
@@ -385,6 +394,10 @@ class CompositeLibrary:
     def source_motion(self, index: int) -> dict | None:
         library, local = self._local(index)
         return library.source_motion(local)
+
+    def preview_kind(self, index: int) -> str:
+        library, local = self._local(index)
+        return library.preview_kind(local)
 
     def frames(self, index: int) -> int:
         library, local = self._local(index)
