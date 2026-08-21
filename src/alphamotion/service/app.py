@@ -1508,6 +1508,9 @@ def create_app() -> FastAPI:
             upd(status="done", result=result,
                 motion_id=result.get("motion_id"),
                 finished_at=dt.datetime.utcnow())
+        except asyncio.CancelledError:
+            upd(status="failed", error="superseded by a newer interactive request",
+                finished_at=dt.datetime.utcnow())
         except Exception as exc:  # noqa: BLE001
             upd(status="failed", error=str(exc)[:2000],
                 finished_at=dt.datetime.utcnow())
@@ -2277,7 +2280,7 @@ def create_app() -> FastAPI:
             return {**state["live"].transport_state(),
                     "title": trace.title, "preview": True}
 
-        return await POOL.run(work)
+        return await POOL.run(work, latest_key="interactive-preview")
 
     @app.post("/api/viewer/preview/timeline")
     async def preview_uncompiled_timeline(req: TimelineRequest):
@@ -2367,7 +2370,7 @@ def create_app() -> FastAPI:
                     "title": trace.title, "preview": True,
                     "frozen_bridges": True}
 
-        return await POOL.run(work)
+        return await POOL.run(work, latest_key="interactive-preview")
 
     @app.post("/api/viewer/preview/motion/{motion_id}")
     async def preview_motion_on_timeline(motion_id: int):
@@ -2395,7 +2398,7 @@ def create_app() -> FastAPI:
             return {**state["live"].transport_state(),
                     "title": trace.title, "preview": True}
 
-        return await POOL.run(work)
+        return await POOL.run(work, latest_key="interactive-preview")
 
     @app.post("/api/jobs/play", status_code=202)
     async def play(req: PlayRequest):
@@ -2556,6 +2559,20 @@ def create_app() -> FastAPI:
                 source = "text_prompt" if kinds == {"prompt"} else \
                     "video" if kinds == {"video"} else \
                     "ai_mixed" if kinds & {"prompt", "video"} else "edit"
+                if req.preview_only:
+                    trace, emb = _preview_trace(
+                        codes, req.target_body, title,
+                        root_t=root_t, fps=req.fps,
+                        root_origin_m=root_origin_m,
+                        root_rotation_delta=np.concatenate(rotation_edits, 0),
+                        root_path_locked=root_path_locked)
+                    state["live"].set_trace(trace, emb.xml, req.target_body)
+                    state["live"].set_transport(frame=0, play=True)
+                    return {
+                        **state["live"].transport_state(),
+                        "preview": True,
+                        "title": title,
+                    }
                 return _finalize(codes, req.target_body, title, source,
                                  render=req.render, fps=req.fps, se3=req.se3,
                                  root_t=root_t, family=family,
@@ -2565,7 +2582,9 @@ def create_app() -> FastAPI:
                                  root_path_locked=root_path_locked,
                                  prompt="; ".join(prompts) or None,
                                  stage=np.concatenate(stages))
-            return await POOL.run(work)
+            return await POOL.run(
+                work,
+                latest_key="interactive-preview" if req.preview_only else None)
         return {"job_id": _submit("timeline", req.model_dump(), run)}
 
     @app.post("/api/jobs/jump", status_code=202)

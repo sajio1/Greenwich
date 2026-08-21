@@ -178,8 +178,38 @@ def test_bridge_generation_skips_mp4_and_reports_elapsed_time():
 
     assert "compileTimeline({bridgeOnly:true})" in frontend
     assert "render:bridgeOnly?false:$('#renderMp4').checked" in frontend
+    assert "preview_only:bridgeOnly" in frontend
+    assert "showBridgePreview(j.result,elapsed)" in frontend
     assert "Generating playable Bridge" in frontend
     assert "j.elapsed_seconds" in frontend
+
+    service = (
+        Path(__file__).parents[2]
+        / "src/alphamotion/service/app.py"
+    ).read_text()
+    schemas = (
+        Path(__file__).parents[2]
+        / "src/alphamotion/service/schemas.py"
+    ).read_text()
+    assert "preview_only: bool = False" in schemas
+    assert "if req.preview_only:" in service
+    assert '"preview": True' in service
+
+
+def test_interactive_model_work_uses_latest_wins_queueing():
+    pool = (
+        Path(__file__).parents[2]
+        / "src/alphamotion/service/pool.py"
+    ).read_text()
+    service = (
+        Path(__file__).parents[2]
+        / "src/alphamotion/service/app.py"
+    ).read_text()
+
+    assert "queue.LifoQueue()" in pool
+    assert "previous.cancel()" in pool
+    assert 'latest_key="interactive-preview"' in service
+    assert "superseded by a newer interactive request" in service
 
 
 def test_project_media_delete_actions_are_exposed_in_both_studios():

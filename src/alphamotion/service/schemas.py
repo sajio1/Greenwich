@@ -151,6 +151,10 @@ class TimelineRequest(APIModel):
     title: str = Field(default="", max_length=240)
     se3: list[SE3Control] = Field(default_factory=list, max_length=64)
     render: bool = True
+    # Bridge's inline Generate button needs a playable editor preview, not a
+    # durable QC/export artifact.  Skipping persistence, full audit and MP4
+    # keeps this interaction usable on CPU-only demo hosts.
+    preview_only: bool = False
     fps: float = Field(default=30.0, ge=1.0, le=120.0)
 
     @model_validator(mode="after")

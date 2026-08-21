@@ -11,6 +11,7 @@ on-demand subprocess lane in its separately configured environment.
 from __future__ import annotations
 
 import asyncio
+import queue
 from concurrent.futures import ThreadPoolExecutor
 
 from ..config import CONFIG
@@ -21,6 +22,11 @@ class ModelPool:
         self.device = device or CONFIG.device
         self._gpu = ThreadPoolExecutor(max_workers=1,
                                        thread_name_prefix="am-gpu")
+        # Interactive editing is recency-sensitive.  When the single model
+        # lane is occupied, take the newest queued request next instead of
+        # making a robot switch or Bridge preview wait behind stale previews.
+        self._gpu._work_queue = queue.LifoQueue()  # noqa: SLF001
+        self._latest: dict[str, asyncio.Future] = {}
         self.greenwich = None
         self.equator = None
         self.atlas = None
@@ -54,11 +60,20 @@ class ModelPool:
                 "human_joints": spec.J}
 
     # -------------------------------------------------------------- calling --
-    async def run(self, fn, *args, **kwargs):
+    async def run(self, fn, *args, latest_key: str | None = None, **kwargs):
         """Run a GPU-touching callable on the single GPU thread."""
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self._gpu,
-                                          lambda: fn(*args, **kwargs))
+        future = loop.run_in_executor(self._gpu, lambda: fn(*args, **kwargs))
+        if latest_key:
+            previous = self._latest.get(latest_key)
+            if previous is not None and not previous.done():
+                previous.cancel()
+            self._latest[latest_key] = future
+        try:
+            return await future
+        finally:
+            if latest_key and self._latest.get(latest_key) is future:
+                self._latest.pop(latest_key, None)
 
 
 POOL = ModelPool()
