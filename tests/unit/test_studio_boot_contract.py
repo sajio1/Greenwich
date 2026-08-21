@@ -91,7 +91,7 @@ def test_data_studio_assets_preview_on_click_until_select_mode():
         / "src/alphamotion/assets/frontend/index.html"
     ).read_text()
 
-    assert "if(!dsSharedSelectMode){openDataStudioPreview(item);return}" in frontend
+    assert "if(!dsSharedSelectMode){openDataStudioAssetWorkspace(item)" in frontend
     assert "if(!dsLocalSelectMode||kind!=='motion'){kind==='motion'?openProjectMotionPreview(item):openRobotAsset(item.name);return}" in frontend
     assert "if(!dsRobotSelectMode){openRobotAsset(item.name);return}" in frontend
 
@@ -142,9 +142,32 @@ def test_project_motion_preview_uses_bodydata_results_workspace():
     ).read_text()
 
     assert "function openProjectMotionPreview(item)" in frontend
-    assert "if(item.local_path){openDataStudioPreview(item,showLabels);return}" in frontend
+    assert "openDataStudioAssetWorkspace(item)" in frontend
+    assert "data_studio_asset_id" in frontend
     assert "type:'alphamotion:open-project-preview'" in frontend
-    assert "show_contacts:showLabels" in frontend
+    assert "show_contacts:labels.includes('foot_contact')" in frontend
+
+
+def test_processed_results_add_a_new_labeled_card_and_open_project_workspace():
+    frontend = (
+        Path(__file__).parents[2]
+        / "src/alphamotion/assets/frontend/index.html"
+    ).read_text()
+    service = (
+        Path(__file__).parents[2]
+        / "src/alphamotion/service/app.py"
+    ).read_text()
+
+    assert "data-studio-process:{run_id}:{asset_id}" in service
+    assert '"data_studio_asset_id": asset_id' in service
+    assert '"labels": ["foot_contact"] if has_contacts else []' in service
+    assert "Contact Labels" in service
+    handler = frontend.split(
+        "async function addProcessedResultsToMedia(message)", 1
+    )[1].split("$('#dsProcess').onclick", 1)[0]
+    assert "await loadDataStudioMedia(false)" in handler
+    assert "await openDataStudioAssetWorkspace(result)" in handler
+    assert "classList.remove('show')" not in handler
 
 
 def test_project_media_delete_actions_are_exposed_in_both_studios():

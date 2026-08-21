@@ -596,6 +596,7 @@ def create_app() -> FastAPI:
             raise HTTPException(422, "processed asset_ids are required")
         labeled = {str(value).strip() for value in
                    payload.get("labeled_asset_ids") or []}
+        run_id = str(payload.get("run_id") or "").strip()
         from ..config import CONFIG
         import sqlite3
         db = sqlite3.connect(CONFIG.data_studio_db)
@@ -637,10 +638,21 @@ def create_app() -> FastAPI:
                                 break
                 except (OSError, ValueError, KeyError):
                     pass
+            # ProjectStore intentionally upserts equal asset IDs.  A process
+            # result is a new project-local derivative, however, so give it a
+            # run-scoped identity while retaining the Data Studio source ID
+            # for inspection and contact-label lookup.
+            project_asset_id = (
+                f"data-studio-process:{run_id}:{asset_id}"
+                if run_id else f"data-studio-process:{asset_id}"
+            )
+            title = str(row["title"])
+            has_contacts = asset_id in labeled
             motions.append({
-                "asset_id": asset_id,
+                "asset_id": project_asset_id,
                 "data_studio_asset_id": asset_id,
-                "name": str(row["title"]),
+                "name": (f"{title} · Contact Labels"
+                         if has_contacts else title),
                 "origin": "data_studio_processed",
                 "source": str(row["source"]),
                 "folder": str(row["folder"]),
@@ -648,8 +660,8 @@ def create_app() -> FastAPI:
                 "frames": frames,
                 "fps": fps,
                 "state": "ready",
-                "labels": ["foot_contact"] if asset_id in labeled else [],
-                "process_run_id": str(payload.get("run_id") or ""),
+                "labels": ["foot_contact"] if has_contacts else [],
+                "process_run_id": run_id,
             })
         project = state["projects"].add_media(
             project_id, motions=motions, bin_name="Processed in Data Studio")
@@ -1124,11 +1136,20 @@ def create_app() -> FastAPI:
             "augmentation_value": lib.augmentation_values[library_id],
             "labels": lib.labels[library_id],
             "record": record, "origin": origin, "variants": variants,
+            # The published-library identifier is durable lineage metadata,
+            # but Body Data Studio uses its own ready-asset identifier to
+            # open the full inspection workspace.  Expose that resolved ID so
+            # the UI never falls back to a lossy, standalone preview.
+            "data_studio_asset_id": data_studio_target_id(library_id),
         }
 
     def data_studio_target_id(library_id: int) -> str:
-        detail = library_detail(library_id)
-        record = detail.get("record") or {}
+        lib = state["library"]
+        if library_id < 0 or library_id >= len(lib):
+            return ""
+        from ..data_studio import catalog_by_id
+        asset_id = lib.asset_ids[library_id]
+        record = catalog_by_id().get(asset_id) if asset_id else None
         if not record:
             return ""
         from ..config import CONFIG
