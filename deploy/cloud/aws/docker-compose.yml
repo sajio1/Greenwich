@@ -24,6 +24,7 @@ services:
       - /srv/alphamotion/cache:/srv/alphamotion/cache
       - /srv/alphamotion/data_studio:/srv/alphamotion/data_studio
       - /srv/alphamotion/body_data:/srv/alphamotion/body_data:ro
+      - /srv/alphamotion/robot_assets:/srv/alphamotion/robot_assets:ro
     expose:
       - "7860"
     networks: [web]
