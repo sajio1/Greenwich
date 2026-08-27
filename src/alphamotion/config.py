@@ -6,6 +6,13 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .paths import data_dir
+
+
+def _data_path(*parts: str) -> str:
+    """Portable default under the user's AlphaMotion data directory."""
+    return str(data_dir().joinpath(*parts))
+
 
 def default_device() -> str:
     try:
@@ -74,15 +81,15 @@ class AMConfig:
     # proxies it under /data-studio/, and reads its published catalog.
     data_studio_repo: str = os.environ.get(
         "ALPHAMOTION_DATA_STUDIO_REPO",
-        "/media/sajio/New Volume/BodyDataStudio",
+        _data_path("vendor", "body-data-studio"),
     )
     data_studio_root: str = os.environ.get(
         "ALPHAMOTION_DATA_STUDIO_ROOT",
-        "/media/sajio/New Volume/body_data",
+        _data_path("body_data"),
     )
     data_studio_cache: str = os.environ.get(
         "ALPHAMOTION_DATA_STUDIO_CACHE",
-        "/media/sajio/New Volume/CodexDeployments/Greenwich/data/data_studio",
+        _data_path("data_studio"),
     )
     data_studio_port: int = int(os.environ.get(
         "ALPHAMOTION_DATA_STUDIO_PORT", "8765"))

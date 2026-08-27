@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import platform
 import sys
+from pathlib import Path
 
 import typer
 
@@ -49,6 +50,19 @@ def doctor():
     rows.append(("data", str(data_dir())))
     rows.append(("db", str(db_path())))
     rows.append(("device", CONFIG.device))
+    from .embodiment import registry
+    rows.append(("robot meshes", f"{len(registry.mesh_map())} configured"))
+    studio = Path(CONFIG.data_studio_repo) / "bodydata_server.py"
+    rows.append(("Data Studio", "ok" if studio.is_file() else "not installed"))
+    smplh = Path(CONFIG.data_studio_root) / "smpl_smplh" / "smplh_300.zip"
+    rows.append(("SMPL-H", "installed" if smplh.is_file()
+                 else "user download required"))
+    smplx = data_dir() / "models" / "smplx" / "SMPLX_NEUTRAL.npz"
+    rows.append(("SMPL-X", "installed" if smplx.is_file()
+                 else "user download required"))
+    imported = data_dir() / "imported_smpl"
+    count = len(list(imported.glob("*/library.npz"))) if imported.is_dir() else 0
+    rows.append(("original motion shards", str(count)))
     width = max(len(k) for k, _ in rows)
     bad = 0
     for k, v in rows:
@@ -69,6 +83,56 @@ def download(third_party: bool = typer.Option(False, "--third-party",
     if third_party:
         typer.echo("Text/video generation uses the separately configured "
                    "AlphaMotion generation worker; see deploy/README.md.")
+
+
+@app.command()
+def setup(
+    weights: bool = typer.Option(True, "--weights/--no-weights"),
+    robots: bool = typer.Option(True, "--robots/--no-robots"),
+    data_studio: bool = typer.Option(True, "--data-studio/--no-data-studio"),
+):
+    """Prepare a public checkout for first use."""
+    if weights:
+        from .weights import download_all
+        typer.echo("Downloading AlphaMotion release artifacts…")
+        for name, path in download_all().items():
+            typer.echo(f"  {name}: {path}")
+    if robots:
+        from .setup_runtime import setup_robots
+        typer.echo("Installing pinned robot URDF/MJCF and mesh assets…")
+        mapping = setup_robots()
+        typer.echo(f"  {len(mapping)} renderable robot bodies configured")
+    if data_studio:
+        from .setup_runtime import setup_data_studio
+        typer.echo("Installing Body Data Studio…")
+        typer.echo(f"  {setup_data_studio()}")
+    typer.echo("Setup complete. Licensed SMPL models and AMASS motions are "
+               "optional user downloads; see docs/INSTALL.md.")
+
+
+@app.command("install-body-models")
+def install_body_models(
+    smplh_archive: Path | None = typer.Option(
+        None, "--smplh-archive", help="official smplh_300.zip"),
+    smplx_model: Path | None = typer.Option(
+        None, "--smplx-model", help="official SMPLX_NEUTRAL.npz"),
+):
+    """Install licensed SMPL files downloaded by the user."""
+    from .setup_runtime import install_body_models as install
+    for name, path in install(smplh_archive, smplx_model).items():
+        typer.echo(f"  {name}: {path}")
+
+
+@app.command("import-smpl-library")
+def import_smpl_library(
+    input_root: Path = typer.Option(
+        ..., "--input", help="directory containing user-downloaded archives"),
+    sources: list[str] = typer.Option([], "--source",
+                                      help="KIT, CMU, BMLmovi, MOYO, DanceDB"),
+):
+    """Build exact-source motion shards from user-downloaded AMASS archives."""
+    from .setup_runtime import import_smpl_library as run_import
+    run_import(input_root, sources or None)
 
 
 @app.command()

@@ -13,14 +13,14 @@ from PIL import Image, ImageDraw
 from scipy.spatial.transform import Rotation
 
 from ..config import CONFIG
+from ..paths import data_dir
 from .kinematics import YUP_TO_ZUP
-
 
 _MODEL_LOCK = threading.RLock()
 
 
 def model_path() -> Path:
-    roots = [CONFIG.gvhmr_repo, CONFIG.genmo_repo]
+    roots = [str(data_dir() / "models"), CONFIG.gvhmr_repo, CONFIG.genmo_repo]
     for root in roots:
         if not root:
             continue

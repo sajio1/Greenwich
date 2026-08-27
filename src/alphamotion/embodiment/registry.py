@@ -45,8 +45,11 @@ def user_names() -> list[str]:
 
 
 def mesh_map() -> dict:
-    """User-attached MJCF paths for bundled bodies (vendor meshes are not
-    redistributable, so this lives in data_dir as editable runtime config)."""
+    """Installed MJCF paths for bundled bodies.
+
+    Setup keeps third-party robot assets in the user data directory with their
+    upstream license files and writes this editable, machine-local map.
+    """
     import json
     p = data_dir() / "robot_meshes.json"
     return json.loads(p.read_text()) if p.exists() else {}

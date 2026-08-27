@@ -6,6 +6,7 @@ build/
 dist/
 .venv/
 *.mp4
+MUJOCO_LOG.TXT
 *.npz.tmp
 weights_staging/
 work/imported_smpl/

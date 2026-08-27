@@ -1,0 +1,9 @@
+{
+  "name": "body-data-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bundled AlphaMotion Data Studio web viewer",
+  "dependencies": {
+    "three": "0.185.1"
+  }
+}

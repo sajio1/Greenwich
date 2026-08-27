@@ -9,10 +9,16 @@ temporal layer and a searchable index over everything it has ever seen or
 generated. This is a pre-release build under active internal benchmarking.
 
 ```bash
-pip install -e .            # Linux / Windows 11, Python >= 3.10
-alphamotion download        # ~1 GB: weights + Atlas + lossless motion assets
-alphamotion serve           # open http://127.0.0.1:7860
+git clone https://github.com/sajio1/Greenwich.git
+cd Greenwich
+./install.sh                # environment + weights + robots + Data Studio
+./run.sh                    # open http://127.0.0.1:7860
 ```
+
+The public installer downloads AlphaMotion-owned weights and pinned,
+license-preserving robot assets. SMPL-H, SMPL-X, and AMASS are licensed user
+downloads and are never redistributed by this repository. See
+[docs/INSTALL.md](docs/INSTALL.md) for the exact model and motion import flow.
 
 ## What makes it different
 
@@ -81,10 +87,13 @@ from packaged artifacts:
 - AlphaMotion supports both text → motion and video → world-grounded SMPL
   motion; see [docs/SDK.md](docs/SDK.md). Generation runs in a separate
   environment, and third-party weights retain their upstream license.
+- An exact-source SMPL motion library can be built from a user's own licensed
+  AMASS downloads with `alphamotion import-smpl-library`; the release library
+  remains available as the clean-install fallback.
 
 ## Honest limitations
 
-- Twelve bundled bodies currently have verified local visual assets; the
+- Fifteen bundled bodies currently have pinned, load-tested visual assets; the
   remaining registered topologies are analysis-only until their vendor meshes
   are attached. Uploaded URDF or zipped URDF packages are validated before
   registration.

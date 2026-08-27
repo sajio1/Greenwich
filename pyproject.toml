@@ -26,6 +26,8 @@ dependencies = [
   "viser>=1.0.16",
   "pillow>=10",
   "smplx>=0.1.28",
+  "trimesh>=4.0",
+  "matplotlib>=3.8",
   "typer>=0.9",
   "httpx>=0.27",
   "websockets>=12",
@@ -43,9 +45,15 @@ alphamotion = "alphamotion.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+namespaces = false
 
 [tool.setuptools.package-data]
-alphamotion = ["assets/**/*", "frontend/**/*"]
+alphamotion = [
+  "assets/**/*",
+  "frontend/**/*",
+  "vendor/body_data_studio/*",
+  "vendor/body_data_studio/**/*",
+]
 
 [tool.pytest.ini_options]
 markers = [

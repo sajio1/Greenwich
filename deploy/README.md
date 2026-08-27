@@ -1,6 +1,6 @@
 # Local deployment
 
-This checkout is pinned to Greenwich commit `f4024a7`.
+The portable public setup is documented in `docs/INSTALL.md`.
 
 ```bash
 ./deploy/doctor.sh
@@ -9,9 +9,9 @@ This checkout is pinned to Greenwich commit `f4024a7`.
 
 The UI is served at <http://127.0.0.1:7860>.
 
-Large environments, caches, models, and robot assets live under
-`/media/sajio/New Volume/CodexDeployments/Greenwich`; the source checkout stays
-on the system disk. `deploy/env.sh` contains the runtime configuration.
+By default, environments live in `.venv` and runtime data uses the operating
+system's per-user application-data directories. `ALPHAMOTION_DATA` and
+`ALPHAMOTION_CACHE` can place large assets on another disk.
 
 Motion generation runs in a separate Python environment. Both Add a Motion
 (text) and Upload Video to Generate use AlphaMotion and return the same global

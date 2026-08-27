@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Body Data Studio</title>
+  <link rel="icon" type="image/png" href="/assets/brand/body-data-mark.png?v=ea28e43">
+  <link rel="stylesheet" href="/style.css?v=logo-centered-3">
+  <script type="importmap">
+    {"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}
+  </script>
+</head>
+<body data-theme="dark">
+  <header class="topbar">
+    <button class="brand" id="homeButton" aria-label="Return to library">
+      <span class="brand-mark"><img src="/assets/brand/body-data-mark.png?v=ea28e43" alt=""></span>
+      <span><strong>Body Data Studio</strong><small>Motion data workspace</small></span>
+    </button>
+    <label class="global-search" id="searchWrap">
+      <span>⌕</span><input id="searchInput" placeholder="Search assets, folders, or formats…"><kbd>Ctrl K</kbd>
+    </label>
+    <div class="top-actions">
+      <span id="indexStatus" class="status-pill"><i></i>Connecting</span>
+      <button id="helpTourButton" class="icon-button" title="Guided tour" aria-label="Open guided tour">?</button>
+      <button id="themeButton" class="icon-button" title="Toggle theme">◐</button>
+    </div>
+  </header>
+
+  <main id="browseView" class="browse-view">
+    <aside class="library">
+      <div class="section-title"><span>Library</span><button id="collapseLibrary" class="quiet">‹</button></div>
+      <nav id="sourceList" class="nav-list"></nav>
+      <div class="section-title workspace-heading"><span>Workspace</span></div>
+      <nav class="nav-list workspace-nav">
+        <button id="favoritesNav" class="nav-item"><span class="nav-icon">★</span><span class="nav-copy"><strong>Favorites</strong><small>Starred assets</small></span></button>
+        <button id="temporaryNav" class="nav-item"><span class="nav-icon">T</span><span class="nav-copy"><strong>Temporary</strong><small>Unsaved processing runs</small></span></button>
+        <button id="exportedNav" class="nav-item"><span class="nav-icon">E</span><span class="nav-copy"><strong>Exported</strong><small>Saved output history</small></span></button>
+      </nav>
+      <div class="section-title collections-heading"><span>Collections</span><button id="newCollectionButton" class="quiet">＋</button></div>
+      <nav id="collectionList" class="nav-list drop-list"></nav>
+      <div class="library-foot"><span>Source data is read-only</span><code id="dataRoot">—</code></div>
+    </aside>
+    <section class="catalog">
+      <div class="catalog-head">
+        <div><small id="catalogEyebrow">ALL ASSETS</small><h1 id="assetTitle">Asset Library</h1></div>
+        <div><select id="folderSelect" class="scope-select" hidden></select><span id="assetTotal">0 assets</span><button id="clusterScopeButton" class="button accent" hidden>Cluster Scope</button><button id="selectModeButton" class="button secondary">Select</button></div>
+      </div>
+      <div id="assetGrid" class="asset-grid"></div>
+      <div id="processHistoryGrid" class="process-history-grid" hidden></div>
+      <button id="loadMore" class="load-more" hidden>Load More</button>
+      <div id="browseEmpty" class="empty" hidden><strong>No assets found</strong><span>Choose another source or adjust the search.</span></div>
+    </section>
+    <div id="selectionBar" class="selection-bar" hidden>
+      <strong id="selectionCount">0 selected</strong><span class="selection-hint">Shift-click range · Ctrl-click toggle</span><button id="sendMotionButton" class="button accent">Send to Motion Studio</button><button id="processSelectedButton" class="button secondary">Process</button><button id="addSelectedButton" class="button secondary">Add to Collection</button><button id="clearSelectionButton" class="button secondary">Cancel</button>
+    </div>
+  </main>
+
+  <main id="healthView" class="health-view" hidden>
+    <header class="health-head"><button id="healthBack" class="button secondary">← Library</button><div><small>DATASET OPERATIONS</small><h1>Dataset Health</h1><span id="healthScope">All indexed sources</span></div><button id="healthRefresh" class="button accent">Refresh</button></header>
+    <section class="health-content">
+      <div id="healthMetrics" class="health-metrics"></div>
+      <div class="health-grid"><section><header><small>FORMAT COVERAGE</small><h2>Assets by format</h2></header><div id="healthFormats" class="health-bars"></div></section><section><header><small>SOURCE COVERAGE</small><h2>Indexed sources</h2></header><div id="healthSources" class="health-table"></div></section></div>
+      <section class="health-failures"><header><small>PREVIEW FAILURES</small><h2>Assets requiring attention</h2></header><div id="healthFailures" class="health-table"></div></section>
+    </section>
+  </main>
+
+  <main id="analysisView" class="analysis-view" hidden>
+    <header class="analysis-head">
+      <button id="analysisBack" class="button secondary">← Library</button>
+      <div class="analysis-identity"><small id="analysisScope">MOTION ANALYSIS</small><h1 id="analysisTitle">Cluster Analysis</h1><span id="analysisSummary">—</span></div>
+      <div class="analysis-actions"><button id="analysisSelectAll" class="button secondary">Select Current Cluster</button><button id="analysisProcess" class="button accent" disabled>Process (0)</button><button id="analysisExport" class="button secondary" disabled>Export (0)</button></div>
+    </header>
+    <div class="analysis-layout">
+      <aside class="cluster-sidebar">
+        <div class="cluster-run-meta"><small>Cluster Result</small><strong id="analysisMethod">—</strong><span id="analysisConfidence">—</span></div>
+        <nav id="analysisClusterList" class="cluster-switcher"></nav>
+        <div class="cluster-sidebar-foot"><a id="analysisCsv" href="#" target="_blank">CSV</a><a id="analysisJson" href="#" target="_blank">JSON</a></div>
+      </aside>
+      <section id="analysisContent" class="analysis-content">
+        <div class="member-head"><div><small id="analysisMemberEyebrow">ALL MOTIONS</small><h2 id="analysisMemberTitle">All Motions</h2></div><span id="analysisMemberCount">0 clips</span></div>
+        <div id="analysisMemberGrid" class="analysis-member-grid"></div>
+      </section>
+    </div>
+  </main>
+
+  <main id="processView" class="process-view" hidden>
+    <header class="process-head">
+      <button id="processBack" class="button secondary">← Library</button>
+      <div class="process-identity"><small>NON-DESTRUCTIVE PIPELINE</small><h1>Process Assets</h1><span id="processSessionState">Draft configuration</span></div>
+      <div class="process-history-actions"><button id="processUndo" class="button secondary" disabled title="Undo (Ctrl+Z)">↶ Undo</button><button id="processRedo" class="button secondary" disabled title="Redo (Ctrl+Shift+Z)">↷ Redo</button></div>
+    </header>
+    <div class="process-layout">
+      <aside class="process-steps">
+        <button class="process-step active" data-process-step="selection"><span>1</span><strong>Selected Data</strong><small id="processSelectedCount">0 inputs</small></button>
+        <button class="process-step" data-process-step="augmentation"><span>2</span><strong>Augmentation</strong><small>Optional</small></button>
+        <button class="process-step" data-process-step="labeling"><span>3</span><strong>Labeling</strong><small>Optional</small></button>
+        <button class="process-step" data-process-step="review"><span>4</span><strong id="processStep4Title">Review & Run</strong><small id="processStep4Note">Temporary first</small></button>
+        <div class="process-safety"><strong id="processSafetyTitle">Source files are read-only</strong><small id="processSafetyText">Nothing is permanent until Save to Exported.</small></div>
+      </aside>
+      <section class="process-config">
+        <article class="process-panel active" data-process-panel="selection">
+          <div class="process-panel-head"><div><small>STEP 1</small><h2>Selected Data</h2></div><span id="processEligibilityBadge" class="process-badge">Checking</span></div>
+          <p class="process-lead">This session keeps references to the selected source assets. No source file is copied or modified.</p>
+          <div id="processAssetList" class="process-asset-list"></div>
+        </article>
+        <article class="process-panel" data-process-panel="augmentation" hidden>
+          <div class="process-panel-head"><div><small>STEP 2 · OPTIONAL</small><h2>Augmentation</h2></div></div>
+          <p class="process-lead">Select any augmentation method you want to apply. Leave every method unselected to skip this step.</p>
+          <section class="option-category" data-module="augmentation">
+            <div class="option-category-head"><span class="option-dot time"></span><div><strong>Time</strong><small>Change motion duration while preserving source FPS</small></div></div>
+            <label class="config-option available"><input id="processDurationEnabled" type="checkbox"><span><strong>Duration Multiplier</strong><small>SO(3) rotation spline + cubic root path · validated output</small></span><em>AVAILABLE</em></label>
+            <div id="processDurationSettings" class="config-settings"><label>Duration values<input id="processDurationValues" value="1.15" spellcheck="false"><small>1–8 comma-separated values from 1.00 to 1.50</small></label></div>
+            <label class="config-option planned"><input type="checkbox" disabled><span><strong>Random Crop</strong><small>Lossless temporal windows with context metadata</small></span><em>PLANNED</em></label>
+            <label class="config-option planned"><input type="checkbox" disabled><span><strong>Monotonic Time Warp</strong><small>Contact-boundary-aware non-uniform timing</small></span><em>PLANNED</em></label>
+          </section>
+          <section id="processBoneCategory" class="option-category" data-module="augmentation" data-augmentation-type="bone">
+            <div class="option-category-head"><span class="option-dot bone"></span><div><strong>Body Proportions</strong><small>Create a new human shape while preserving the motion and foot contacts</small></div></div>
+            <label class="config-option available bone-option"><input id="processBoneEnabled" type="checkbox"><span><strong>Random Bone Length</strong><small>Human-range SMPL-H leg, arm, and torso proportions · contact-anchored root correction</small></span><em>AVAILABLE</em></label>
+            <div id="processBoneSettings" class="config-settings bone-settings"><label>Variants per motion<input id="processBoneVariants" type="number" min="1" max="8" step="1" value="1"><small>Each variant uses a reproducible random seed. Source FPS and poses stay unchanged.</small></label></div>
+          </section>
+        </article>
+        <article class="process-panel" data-process-panel="labeling" hidden>
+          <div class="process-panel-head"><div><small>STEP 3 · OPTIONAL</small><h2>Labeling</h2></div></div>
+          <p class="process-lead">Select a labeling method, then choose exactly which fields it should produce. Leave every method unselected to skip this step.</p>
+          <section class="option-category" data-module="labeling">
+            <div class="option-category-head"><span class="option-dot contact"></span><div><strong>Contact</strong><small>Physical interaction labels</small></div></div>
+            <label class="config-option available contact-option"><input id="processFootContactEnabled" type="checkbox"><span><strong>Foot Contact</strong><small>SMPL-H forward kinematics · height/speed hysteresis</small></span><em>AVAILABLE</em></label>
+            <div id="processContactSettings">
+              <div id="contactFootRegions" class="choice-section"><strong>Foot regions</strong><small class="choice-hint">Independent heel-strike and toe-off labels</small><div class="choice-grid"><label><input id="labelLeftHeel" type="checkbox" checked> Left heel</label><label><input id="labelLeftForefoot" type="checkbox" checked> Left forefoot</label><label><input id="labelRightHeel" type="checkbox" checked> Right heel</label><label><input id="labelRightForefoot" type="checkbox" checked> Right forefoot</label></div></div>
+              <div id="contactOutputChannels" class="choice-section"><strong>Output channels</strong><small class="choice-hint">Core training labels</small><div class="choice-grid channels"><label><input id="labelBinary" type="checkbox" checked> Binary contact</label><label><input id="labelConfidence" type="checkbox" checked> Contact score</label><label><input id="labelSegments" type="checkbox" checked> Contact segments</label></div><small class="choice-hint advanced">Advanced diagnostics</small><div class="choice-grid channels"><label><input id="labelPosition" type="checkbox"> World-space foot position</label><label><input id="labelHeight" type="checkbox"> Foot height above ground</label><label><input id="labelSpeed" type="checkbox"> Foot speed</label></div></div>
+              <label class="process-field">Apply labels to<select id="labelScope"><option value="both">Original and derived motions</option><option value="original">Original motions only</option><option value="derived">Derived motions only</option></select></label>
+            </div>
+          </section>
+        </article>
+        <article class="process-panel" data-process-panel="review" hidden>
+          <div class="process-panel-head"><div><small>STEP 4</small><h2 id="processReviewTitle">Review & Run</h2></div><span id="processValidationBadge" class="process-badge">Draft</span></div>
+          <div id="processReviewCards" class="process-review-cards"></div>
+          <div id="processRunProgress" class="process-running" hidden><span class="spinner"></span><div><strong>Building temporary results</strong><small id="processRunProgressText">Running selected modules…</small></div></div>
+          <div id="processRunResult" class="process-run-result" hidden></div>
+          <button id="runProcessButton" class="button accent full">Build Temporary Results</button>
+          <div id="processSaveArea" class="process-save-area" hidden>
+            <label>Output folder<input id="processDestination" spellcheck="false"></label>
+            <label class="inline-check"><input id="processIncludeOriginal" type="checkbox"> Include copies of original source motions</label>
+            <div><button id="saveProcessButton" class="button accent">Save to Exported</button><button id="discardProcessButton" class="button secondary">Discard Temporary</button></div>
+          </div>
+        </article>
+      </section>
+      <aside class="process-summary">
+        <small>SESSION SUMMARY</small><h3>Processing Plan</h3>
+        <dl><div><dt>Inputs</dt><dd id="processSummaryInputs">0</dd></div><div><dt>Augmentation</dt><dd id="processSummaryAugmentation">Off</dd></div><div><dt>Labeling</dt><dd id="processSummaryLabeling">Off</dd></div><div><dt>Generated files</dt><dd id="processSummaryOutputs">0</dd></div></dl>
+        <p id="processSummaryNote">Configure optional modules, then review the plan.</p>
+        <button id="processNext" class="button accent full">Next</button>
+      </aside>
+    </div>
+  </main>
+
+  <main id="processResultsView" class="results-view" hidden>
+    <header class="results-head">
+      <button id="resultsBack" class="button secondary">← Library</button>
+      <div class="results-identity"><small>PROCESSING RESULTS</small><h1 id="resultsTitle">Review Outputs</h1><span id="resultsRunSummary">—</span></div>
+      <div class="results-head-actions"><span id="resultsStorageBadge" class="process-badge">Temporary</span><button id="resultsEditAsNew" class="button secondary">Edit as New Run</button><button id="resultsOpenFolder" class="button secondary" hidden>Open Folder</button><button id="resultsDeleteExported" class="button danger" hidden>Delete</button></div>
+    </header>
+    <div class="results-layout">
+      <aside class="results-sidebar">
+        <div class="results-sidebar-head"><small>OUTPUT LINEAGE</small><strong id="resultsTreeSummary">—</strong></div>
+        <nav id="resultsTree" class="results-tree"></nav>
+        <div id="resultsTemporaryActions" class="results-save-panel" hidden>
+          <label>Output folder<input id="resultsDestination" spellcheck="false"></label>
+          <label class="inline-check"><input id="resultsIncludeOriginal" type="checkbox"> Include original motions</label>
+          <div><button id="resultsSave" class="button accent">Save to Exported</button><button id="resultsDiscard" class="button secondary">Discard</button></div>
+        </div>
+        <div id="resultsExportedLocation" class="results-exported-location" hidden><small>SAVED LOCATION</small><code id="resultsDestinationCode">—</code></div>
+      </aside>
+      <section class="results-content">
+        <div class="results-content-head">
+          <div><small id="resultsAssetRole">OUTPUT</small><h2 id="resultsAssetTitle">—</h2><span id="resultsAssetMeta">—</span></div>
+          <button id="resultsInspect" class="button secondary">Inspect Asset</button>
+          <nav id="resultsTabs" class="results-tabs">
+            <button data-results-tab="preview" class="active">Preview</button>
+            <button data-results-tab="compare">Compare</button>
+            <button data-results-tab="validation">Validation</button>
+            <button data-results-tab="contacts">Contacts</button>
+          </nav>
+        </div>
+        <section id="resultsMotionPanel" class="results-motion-panel">
+          <div id="resultsDualViewer" class="dual-motion-viewer results-dual-viewer single">
+            <article id="resultsLeftPanel" class="compare-panel" data-content-role="original">
+              <header><div><span id="resultsLeftRole">PREVIEW</span><h3 id="resultsLeftName">—</h3><p id="resultsLeftMeta">—</p></div><strong id="resultsLeftFps">— FPS</strong></header>
+              <div class="compare-viewport"><canvas id="resultsLeftCanvas"></canvas><div id="resultsLeftLoading" class="compare-loading"><span class="spinner"></span><small>Loading preview</small></div><div id="resultsLeftError" class="compare-error" hidden></div><div class="axis-legend"><b class="x">X</b><b class="y">Y</b><b class="z">Z</b></div></div>
+            </article>
+            <article id="resultsRightPanel" class="compare-panel" data-content-role="augmented" hidden>
+              <header><div><span id="resultsRightRole">DERIVED</span><h3 id="resultsRightName">—</h3><p id="resultsRightMeta">—</p></div><strong id="resultsRightFps">— FPS</strong></header>
+              <div class="compare-viewport"><canvas id="resultsRightCanvas"></canvas><div id="resultsRightLoading" class="compare-loading"><span class="spinner"></span><small>Loading preview</small></div><div id="resultsRightError" class="compare-error" hidden></div><div class="axis-legend"><b class="x">X</b><b class="y">Y</b><b class="z">Z</b></div></div>
+            </article>
+          </div>
+          <div class="compare-transport"><button id="resultsPlay" class="play-button" disabled>▶</button><div class="timeline-wrap"><input id="resultsTimeline" type="range" min="0" max="1000" value="0" disabled><div><span id="resultsCurrentTime">00:00.000</span><span>PLAYBACK</span><span id="resultsDuration">00:00.000</span></div></div><select id="resultsPlaybackSpeed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option></select></div>
+        </section>
+        <section id="resultsValidationPanel" class="results-detail-panel" hidden><div class="results-detail-heading"><small>VALIDATION REPORT</small><h3>Motion Integrity</h3></div><div id="resultsValidationMetrics" class="validation-metrics"></div><div id="resultsValidationWarnings" class="augmentation-warnings" hidden></div><div id="resultsValidationChecks" class="validation-checks"></div><a id="resultsQualityPlot" href="#" target="_blank" class="button secondary" hidden>Open Quality Plot</a></section>
+        <section id="resultsContactsPanel" class="results-contact-panel" hidden>
+          <div class="results-detail-heading"><small>CONTACT LABELS</small><h3>Foot Contact Diagnostics</h3></div>
+          <div id="resultsContactSummary" class="results-contact-summary">Loading labels…</div>
+          <div id="resultsContactEmpty" class="results-contact-empty" hidden>No selected contact channel has preview data.</div>
+          <section id="resultsContactOverview" class="contact-diagnostic-block">
+            <header><div><small>CONTACT STATE</small><h4>Binary timeline</h4></div><div id="resultsContactLive" class="contact-live-values"></div></header>
+            <div class="contact-timeline-wrap"><div id="resultsContactRowLabels" class="contact-row-labels"></div><canvas id="resultsContactTrack" width="1200" height="132"></canvas><i id="resultsContactPlayhead"></i></div>
+            <div id="resultsContactSegments" class="results-contact-segments"></div>
+          </section>
+          <section id="resultsSignalsPanel" class="contact-diagnostic-block" hidden>
+            <header><div><small>FRAME SIGNALS</small><h4>Score, height, and speed</h4></div><div id="resultsSignalsLive" class="contact-live-values"></div></header>
+            <div class="contact-chart-wrap"><canvas id="resultsSignalsCanvas" width="1200" height="360"></canvas><i id="resultsSignalsPlayhead"></i></div>
+          </section>
+          <section id="resultsSpatialPanel" class="contact-diagnostic-block" hidden>
+            <header><div><small>WORLD SPACE</small><h4>Foot trajectories · top view</h4></div><div id="resultsSpatialLive" class="contact-live-values"></div></header>
+            <div class="contact-spatial-wrap"><canvas id="resultsSpatialCanvas" width="1200" height="400"></canvas><canvas id="resultsSpatialOverlay" width="1200" height="400"></canvas></div>
+          </section>
+        </section>
+      </section>
+    </div>
+  </main>
+
+  <main id="augmentationView" class="augmentation-view" hidden data-augmentation-type="time">
+    <header class="augmentation-head">
+      <button id="augmentationBack" class="button secondary">← Library</button>
+      <div class="augmentation-identity"><small>DERIVED MOTION REVIEW</small><h1>Temporal Comparison</h1><span id="augmentationRunSummary">—</span></div>
+      <div class="augmentation-head-actions"><span id="augmentationSaveState" class="augmentation-save-state">CACHED DRAFT</span><button id="saveAugmentationButton" class="button accent">Save</button><span id="augmentationRunBadge" class="augmentation-type-badge" title="Temporal augmentation">T</span></div>
+    </header>
+    <div class="augmentation-layout">
+      <aside class="augmentation-sidebar">
+        <div class="augmentation-method"><small>METHOD</small><strong id="augmentationMethod">—</strong><span>Source files remain read-only</span></div>
+        <nav id="augmentationPairList" class="augmentation-pair-list"></nav>
+        <a id="augmentationJson" href="#" target="_blank" class="augmentation-json-link">Validation JSON</a>
+      </aside>
+      <section class="augmentation-content">
+        <div class="augmentation-content-head"><div><small id="augmentationPairIndex">PAIR 1</small><h2 id="augmentationPairTitle">—</h2></div><span id="augmentationValidationState" class="validation-state">—</span></div>
+        <div class="dual-motion-viewer">
+          <article id="originalComparePanel" class="compare-panel" data-content-role="original" data-compare-slot="0">
+            <header><div><span id="compareOriginalRole">ORIGINAL</span><h3 id="augmentationOriginalName">—</h3><p id="augmentationOriginalMeta">—</p></div><div><button id="inspectAugmentationOriginal" class="button secondary compact">Inspect</button><strong id="compareOriginalFps">— FPS</strong></div></header>
+            <div class="compare-viewport"><canvas id="originalCompareCanvas"></canvas><div id="originalCompareLoading" class="compare-loading"><span class="spinner"></span><small>Loading preview</small></div><div id="originalCompareError" class="compare-error" hidden></div><div class="axis-legend"><b class="x">X</b><b class="y">Y</b><b class="z">Z</b></div></div>
+          </article>
+          <article id="derivedComparePanel" class="compare-panel" data-content-role="augmented" data-augmentation-type="time" data-compare-slot="1">
+            <header><div><span id="compareDerivedRole">AUGMENTED · TIME</span><h3 id="augmentationDerivedName">—</h3><p id="augmentationDerivedMeta">—</p></div><div><button id="inspectAugmentationDerived" class="button secondary compact">Inspect</button><strong id="compareDerivedFps">— FPS</strong></div></header>
+            <div class="compare-viewport"><canvas id="derivedCompareCanvas"></canvas><div id="derivedCompareLoading" class="compare-loading"><span class="spinner"></span><small>Loading preview</small></div><div id="derivedCompareError" class="compare-error" hidden></div><div class="axis-legend"><b class="x">X</b><b class="y">Y</b><b class="z">Z</b></div></div>
+          </article>
+        </div>
+        <div class="compare-transport"><button id="augmentationPlay" class="play-button" disabled>▶</button><div class="timeline-wrap"><input id="augmentationTimeline" type="range" min="0" max="1000" value="0" disabled><div><span id="augmentationCurrentTime">00:00.000</span><span>SYNCED CLOCK</span><span id="augmentationDuration">00:00.000</span></div></div><select id="augmentationPlaybackSpeed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option></select></div>
+        <section class="validation-report"><div class="validation-report-head"><div><small>VALIDATION REPORT</small><h3>Motion Integrity</h3></div><div class="validation-report-links"><a id="augmentationQualityPlot" href="#" target="_blank" hidden>Quality plot</a><span>Stored with every derived file</span></div></div><div id="augmentationWarnings" class="augmentation-warnings" hidden></div><div id="augmentationMetrics" class="validation-metrics"></div><div id="augmentationChecks" class="validation-checks"></div></section>
+      </section>
+    </div>
+  </main>
+
+  <main id="previewView" class="preview-view" hidden>
+    <div class="preview-head">
+      <button id="backButton" class="button secondary">← Library</button>
+      <div class="preview-identity"><small id="viewerSource">PREVIEW</small><h1 id="viewerTitle">—</h1></div>
+      <div class="preview-actions">
+        <button id="previewFavorite" class="favorite-preview" title="Add to Favorites" aria-label="Add to Favorites">☆</button>
+        <button id="addOneButton" class="button secondary">Add to Collection</button>
+        <button id="inspectButton" class="button secondary">Inspect</button>
+        <button id="adjustButton" class="button accent">Adjust</button>
+      </div>
+    </div>
+    <section class="stage-wrap">
+      <div id="viewport" class="viewport">
+        <canvas id="threeCanvas"></canvas>
+        <div id="viewerHint" class="viewer-hint"><strong>Interactive 3D Preview</strong><span>Left drag: rotate · Right drag: pan · Wheel: zoom</span></div>
+        <div id="loadingOverlay" class="loading-overlay" hidden><div class="spinner"></div><strong id="loadingText">Preparing preview</strong><span id="loadingDetail">The first decode is cached in the background</span></div>
+        <div id="errorOverlay" class="error-overlay" hidden><strong>Preview unavailable</strong><p id="errorText"></p></div>
+        <div class="stage-tools">
+          <button id="resetCamera" class="icon-button" title="Reset camera">⌂</button>
+          <button id="toggleSkeleton" class="icon-button active" title="Toggle skeleton">S</button>
+          <button id="toggleGrid" class="icon-button active" title="Toggle grid">#</button>
+        </div>
+        <div id="qualityBadge" class="quality-badge" hidden></div>
+        <div id="contactBadge" class="contact-badge" hidden><span id="leftHeelContactBadge">L HEEL</span><span id="leftForefootContactBadge">L FORE</span><span id="rightHeelContactBadge">R HEEL</span><span id="rightForefootContactBadge">R FORE</span><small id="contactConfidence">Contact labels</small></div>
+        <div id="previewFpsBadge" class="fps-badge"><strong id="previewFpsValue">FPS —</strong><span id="previewFpsNote">Reading source frame rate</span></div>
+        <div class="axis-legend"><b class="x">X</b><b class="y">Y</b><b class="z">Z</b></div>
+      </div>
+      <aside id="adjustDrawer" class="adjust-drawer" hidden>
+        <div class="drawer-head"><div><small>NON-DESTRUCTIVE RECIPE</small><h2>Coordinates & Handedness</h2></div><button id="closeAdjust" class="icon-button">×</button></div>
+        <label>Apply to<select id="recipeScope"><option value="asset">This asset</option><option value="folder">Entire folder</option></select></label>
+        <p id="recipeScopeNote">Saves a correction recipe without modifying the source file.</p>
+        <label>Up axis<select id="upAxis"><option value="source">Keep source coordinates</option><option value="y">Y-up</option><option value="z">Z-up → Y-up</option><option value="x">X-up → Y-up</option></select></label>
+        <div class="field-grid">
+          <label>Rotate X°<input id="rotateX" type="number" step="90" value="0"></label>
+          <label>Rotate Y°<input id="rotateY" type="number" step="90" value="0"></label>
+          <label>Rotate Z°<input id="rotateZ" type="number" step="90" value="0"></label>
+        </div>
+        <label>Display scale<input id="displayScale" type="number" min="0.0001" step="0.1" value="1"></label>
+        <fieldset><legend>Coordinate mirror</legend><label><input id="mirrorX" type="checkbox"> Mirror X</label><label><input id="mirrorY" type="checkbox"> Mirror Y</label><label><input id="mirrorZ" type="checkbox"> Mirror Z</label></fieldset>
+        <fieldset><legend>Semantic correction</legend><label><input id="swapLR" type="checkbox"> Swap left/right joint names</label><label><input id="groundAsset" type="checkbox" checked> Ground feet</label></fieldset>
+        <div id="handednessNote" class="note">A single-axis mirror changes coordinate handedness. Joint-name swapping is recorded separately.</div>
+        <button id="resetRecipe" class="button secondary full">Reset</button>
+        <span id="recipeSaved" class="saved">Saved</span>
+      </aside>
+      <aside id="inspectorDrawer" class="inspector-drawer" hidden>
+        <div class="drawer-head"><div><small>READ-ONLY INSPECTOR</small><h2>Asset Data</h2></div><button id="closeInspector" class="icon-button">×</button></div>
+        <nav class="inspector-tabs"><button class="active" data-inspector-tab="summary">Summary</button><button data-inspector-tab="structure">Structure</button><button data-inspector-tab="skeleton">Skeleton</button><button data-inspector-tab="motion">Motion</button><button data-inspector-tab="provenance">Provenance</button></nav>
+        <div id="inspectorLoading" class="inspector-loading">Reading source structure…</div>
+        <section id="inspectorSummary" class="inspector-panel" data-inspector-panel="summary"></section>
+        <section id="inspectorStructure" class="inspector-panel" data-inspector-panel="structure" hidden></section>
+        <section id="inspectorSkeleton" class="inspector-panel" data-inspector-panel="skeleton" hidden></section>
+        <section id="inspectorMotion" class="inspector-panel" data-inspector-panel="motion" hidden></section>
+        <section id="inspectorProvenance" class="inspector-panel" data-inspector-panel="provenance" hidden></section>
+      </aside>
+    </section>
+    <div class="transport">
+      <button id="playButton" class="play-button" disabled>▶</button>
+      <div class="timeline-wrap"><canvas id="contactTrack" class="contact-track" width="1200" height="14" hidden></canvas><div id="motionWarningTrack" class="motion-warning-track" hidden></div><input id="timeline" type="range" min="0" max="1000" value="0" disabled><div><span id="currentTime">00:00.000</span><span id="clipInfo">Static asset</span><span id="durationTime">00:00.000</span></div></div>
+      <select id="speedSelect" disabled><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select>
+    </div>
+    <div class="details-strip"><span><small>Format</small><b id="detailFormat">—</b></span><span><small>Type</small><b id="detailKind">—</b></span><span><small>Motion</small><b id="detailAnimated">—</b></span><span><small>Size</small><b id="detailSize">—</b></span><span class="grow"><small>Archive location</small><b id="detailFolder">—</b></span></div>
+  </main>
+
+  <dialog id="collectionDialog">
+    <form method="dialog"><div class="dialog-head"><h2>Add to Collection</h2><button value="cancel" class="icon-button">×</button></div><div id="dialogCollections" class="dialog-list"></div><button id="createInsideDialog" type="button" class="button secondary full">＋ New Collection</button></form>
+  </dialog>
+  <dialog id="clusterDialog">
+    <form method="dialog">
+      <div class="dialog-head"><div><small>MOTION ANALYSIS</small><h2>Cluster Current Scope</h2></div><button value="cancel" class="icon-button">×</button></div>
+      <p id="clusterFolder" class="note">—</p>
+      <p id="clusterScopeCount" class="note">—</p>
+      <label class="dialog-field">Cluster count<select id="clusterCount"><option value="" selected>Auto: select by motion structure</option><option value="2">Manual: 2</option><option value="3">Manual: 3</option><option value="4">Manual: 4</option><option value="5">Manual: 5</option><option value="6">Manual: 6</option><option value="8">Manual: 8</option><option value="10">Manual: 10</option><option value="12">Manual: 12</option></select></label>
+      <button id="startCluster" type="button" class="button accent full">Run Clustering</button>
+      <div id="clusterProgress" class="cluster-progress" hidden><div class="spinner"></div><div><strong id="clusterProgressTitle">Preparing motion analysis</strong><span id="clusterProgressDetail">Starting…</span></div></div>
+      <div id="clusterResults" class="cluster-results"></div>
+    </form>
+  </dialog>
+  <dialog id="exportDialog">
+    <form method="dialog">
+      <div class="dialog-head"><div><small>SAFE COPY EXPORT</small><h2>Export Selected Motions</h2></div><button value="cancel" class="icon-button">×</button></div>
+      <p id="exportSummary" class="note">—</p>
+      <label class="dialog-field">Destination folder<input id="exportDestination" spellcheck="false"></label>
+      <p class="note">Copies files and writes manifest.csv / manifest.json. Source data is never moved, deleted, or overwritten.</p>
+      <button id="confirmExport" type="button" class="button accent full">Copy & Export</button>
+      <div id="exportProgress" class="cluster-progress" hidden><div class="spinner"></div><span>Copying files and writing manifests…</span></div>
+      <div id="exportResult" class="export-result" hidden></div>
+    </form>
+  </dialog>
+  <dialog id="renameClusterDialog">
+    <form method="dialog">
+      <div class="dialog-head"><div><small>CLUSTER NAME</small><h2>Rename Motion Group</h2></div><button value="cancel" class="icon-button">×</button></div>
+      <p id="renameClusterHint" class="note">—</p>
+      <label class="dialog-field">Group name<input id="renameClusterInput" maxlength="80" autocomplete="off"></label>
+      <button id="saveClusterName" type="button" class="button accent full">Save Name</button>
+    </form>
+  </dialog>
+  <dialog id="augmentationDialog" class="augmentation-builder" data-augmentation-type="time">
+    <form method="dialog">
+      <div class="dialog-head"><div><small>AUGMENTATION</small><h2>Build Motion Variants</h2></div><button value="cancel" class="icon-button">×</button></div>
+      <p id="augmentationSelectionSummary" class="note">—</p>
+      <section class="augmentation-category expanded" data-augmentation-type="time">
+        <div class="augmentation-category-head">
+          <label><input id="timeCategoryCheck" type="checkbox" checked><span class="augmentation-type-dot"></span><span><strong>Time</strong><small>Duration, sampling and phase transformations</small></span></label>
+          <button id="timeCategoryToggle" type="button" class="augmentation-category-toggle" aria-expanded="true">›</button>
+        </div>
+        <div id="timeMethodList" class="augmentation-method-list">
+          <label class="augmentation-method-card implemented">
+            <input id="durationMultiplierCheck" type="checkbox" checked>
+            <span><strong>Duration Multiplier</strong><small>Lengthen the motion while preserving the source clip's frame rate</small></span>
+            <em>AVAILABLE</em>
+          </label>
+          <div class="augmentation-method-card planned"><span class="method-placeholder"></span><span><strong>Random Crop</strong><small>Lossless temporal windows with minimum context and endpoint metadata</small></span><em>PLANNED</em></div>
+          <div class="augmentation-method-card planned"><span class="method-placeholder"></span><span><strong>Monotonic Time Warp</strong><small>Contact-boundary-aware monotonic warping without post-sort repair</small></span><em>PLANNED</em></div>
+          <div class="augmentation-method-card planned"><span class="method-placeholder"></span><span><strong>Phase-aware Retime</strong><small>Locomotion-only stance/swing timing model</small></span><em>PLANNED</em></div>
+          <div id="durationMultiplierSettings" class="augmentation-method-settings">
+            <label class="dialog-field">Duration values<input id="durationScaleInput" value="1.15" inputmode="decimal" spellcheck="false"><small>1.00–1.50 · comma-separated · example: 1.10, 1.15, 1.25</small></label>
+          </div>
+        </div>
+      </section>
+      <div class="augmentation-safety"><strong>Frame-rate rule</strong><p>Every output inherits its source clip FPS. A longer duration is created by adding frames, never by lowering FPS.</p></div>
+      <button id="startAugmentation" type="button" class="button augmentation-action full" data-augmentation-type="time">Generate & Validate</button>
+      <div id="augmentationProgress" class="cluster-progress" hidden><div class="spinner"></div><span>Adding frames at the source rate and validating motion quality…</span></div>
+      <div id="augmentationError" class="export-result" hidden></div>
+    </form>
+  </dialog>
+  <dialog id="contactDialog">
+    <form method="dialog">
+      <div class="dialog-head"><div><small>CONTACT ANALYSIS</small><h2>Foot Contact Labels</h2></div><button value="cancel" class="icon-button">×</button></div>
+      <p id="contactSelectionSummary" class="note">Select SMPL-H motion clips.</p>
+      <div class="contact-method-card"><strong>SMPL-H forward kinematics</strong><span>Foot height + world velocity · hysteresis · short-gap cleanup</span><small>Creates cached per-frame left/right labels and confidence. Source NPZ files remain unchanged.</small></div>
+      <button id="startContactLabels" type="button" class="button contact-action full">Generate Contact Labels</button>
+      <div id="contactProgress" class="cluster-progress" hidden><div class="spinner"></div><span>Running SMPL-H forward kinematics and contact validation…</span></div>
+      <div id="contactResult" class="export-result" hidden></div>
+    </form>
+  </dialog>
+  <dialog id="tourWelcomeDialog" class="tour-welcome">
+    <div class="tour-landing-shell">
+      <aside class="tour-landing-nav">
+        <div class="tour-landing-brand"><span><img src="/assets/brand/body-data-mark.png?v=ea28e43" alt=""></span><div><strong>Body Data Studio</strong><small>Motion data workspace</small></div></div>
+        <p>PRODUCT INTRODUCTION</p>
+        <nav id="tourLandingNav" aria-label="Product introduction chapters"></nav>
+        <div class="tour-landing-nav-foot"><strong>4 chapters</strong><span>About 1 minute</span></div>
+      </aside>
+      <section class="tour-landing-main">
+        <div id="tourLandingPage" class="tour-landing-page" aria-live="polite"></div>
+        <footer class="tour-landing-footer">
+          <div><strong id="tourLandingProgress">01 / 04</strong><span>Use the chapter list or continue in order</span></div>
+          <div class="tour-landing-actions">
+            <button id="tourSkipWelcome" class="button secondary" hidden>Enter workspace</button>
+            <button id="tourLandingNext" class="button accent">Next</button>
+            <button id="tourStartButton" class="button accent" hidden>Start product walkthrough</button>
+          </div>
+        </footer>
+      </section>
+    </div>
+  </dialog>
+  <div id="tourOverlay" class="tour-overlay" hidden aria-live="polite">
+    <div id="tourSpotlight" class="tour-spotlight"></div>
+    <svg id="tourArrow" class="tour-arrow" aria-hidden="true"><defs><marker id="tourArrowHead" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z"></path></marker></defs><path id="tourArrowPath" marker-end="url(#tourArrowHead)"></path></svg>
+    <aside id="tourBubble" class="tour-bubble">
+      <div class="tour-bubble-head"><span id="tourStepCount">STEP 1</span><button id="tourExitButton" aria-label="Exit guided tour">×</button></div>
+      <h2 id="tourTitle">Guided tour</h2>
+      <p id="tourBody"></p>
+      <div class="tour-bubble-foot"><button id="tourRestartButton" class="tour-text-button">Restart</button><span id="tourActionHint"></span><button id="tourNextButton" class="button accent">Next</button></div>
+    </aside>
+  </div>
+  <div id="toast" class="toast" hidden></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

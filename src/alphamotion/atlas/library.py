@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .families import FAMILIES, family_of
+from .families import family_of
 
 
 class Library:
@@ -300,11 +300,12 @@ class Library:
 
 
 def load_default() -> Library:
+    from ..paths import data_dir
     from ..weights import resolve
     libraries: list[Library] = []
     imported = os.environ.get("ALPHAMOTION_IMPORTED_LIBRARY", "").strip()
-    if imported:
-        root = Path(imported)
+    root = Path(imported) if imported else data_dir() / "imported_smpl"
+    if root.is_dir():
         paths = ([root / "library.npz"] if (root / "library.npz").is_file()
                  else sorted(root.glob("*/library.npz")))
         libraries.extend(Library(path) for path in paths)
